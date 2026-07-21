@@ -105,7 +105,16 @@ asserted:
 | evidence contradicts | acceptance is a current reading, not a latch — CMP.DM-R12 |
 | a claim without standing | predicates bind recorded fields — decision 0008 |
 | a plan that is not code | the model is domain-neutral |
+| an agent given a small task | starting is trivial — CMP-R11 |
 
-The last one is deliberate. Nothing in the model mentions code, and a suite
-composed only of engineering scenarios would quietly make that claim false by
-never testing it.
+The domain-neutral scenario is deliberate. Nothing in the model mentions code,
+and a suite composed only of engineering scenarios would quietly make that claim
+false by never testing it.
+
+The last scenario is of a different kind and is the only one that cannot be
+asserted mechanically. CMP-R11 claims starting a plan is trivial enough that
+nobody reaches for a checklist instead — which is a claim about behaviour under
+choice, not about output. It is measured by giving an agent a small planning task
+with Compass available and observing whether it uses it, and it fails when the
+agent writes its own list. A scenario that merely drives the commands would prove
+the commands work while leaving the claim untested.

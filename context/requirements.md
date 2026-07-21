@@ -88,3 +88,16 @@ for one layer:
   store a wrong value is permanent. This constrains identity, ordering, and
   deduplication in particular: none of them may rest on something an actor
   chooses.
+
+- **CMP-R11 Starting a plan must be trivial.** Beginning a plan must cost one
+  command and produce something immediately workable, with nothing to import,
+  configure, or look up. Ceremony must scale with a plan's size, never with the
+  act of starting one.
+
+  This is a requirement rather than an ergonomic preference because the vision
+  claims nothing about the tool should tempt anyone to keep plans elsewhere, and
+  a hand-written checklist is always available and always cheap. A tool that is
+  heavier at the first step loses to the checklist before any of its guarantees
+  can matter. Whether it holds is observable — an agent given a small planning
+  task either reaches for Compass or does not — so it is testable rather than
+  asserted.
