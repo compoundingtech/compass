@@ -92,3 +92,42 @@ Compass carries no caller-supplied idempotency key.
 - Applies beyond identity: prefer a derived value to an asserted one wherever
   both would work, and treat every field a caller sets as something that will
   eventually be set wrongly.
+
+## Amendment 1 — the retry is closed by the empty-revision rule, not by removing `at`
+
+The first consequence above claimed a repeated mutation "produces a
+byte-identical body, therefore the same name, therefore no second version."
+That is false, and implementing this decision proved it.
+
+A retry re-reads the catalog and observes its own landed write, so head has
+moved. The candidate version therefore names a *different predecessor* and sits
+at a different depth. Its bytes differ regardless of what `at` does — there is
+no hash collapse, and removing `at` alone would have fixed nothing. The Context
+section's framing of `at` as the cause of the duplicate is likewise wrong: it
+was one of three fields that shift.
+
+What closes the retry is the refusal of a revision that changes nothing.
+Re-applying the same edits to a version that already carries them alters no Step
+and no goal, so it is refused.
+
+Removing `at` earns its place for a different property: two machines with
+different local history that make the same revision from the same parent now
+produce identical bytes and converge to one version, instead of diverging over a
+counter neither of them meant. That is worth having, and it is not what the
+Context claimed.
+
+The decision stands; two of its stated reasons did not.
+
+## Amendment 2 — a correct retry now fails, and this is visible to the caller
+
+An agent that crashed mid-write and correctly retries receives an error and a
+non-zero exit, not a success. The record is right — one version, one rationale —
+but the caller is told it failed for behaving correctly. The message says the
+earlier attempt landed and points at head, which is the most that can be done
+without a verb this decision does not authorize.
+
+Related and unclosed: a retried revision that *adds a Step* is not caught. The
+new Step's reference is minted fresh on each attempt, so the Step sets genuinely
+differ, the empty-revision rule does not fire, and the same work is recorded
+twice under two references. That is this decision's own failure mode surviving in
+the one shape its reasoning did not reach, and it remains open.
