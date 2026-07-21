@@ -48,10 +48,23 @@
   writes permanent intent to resolve a transient condition.
   _refines: CMP-R04, CMP-R05._
 
-- **CMP.DM-R07 Versions are attributable.** Each version records its author and
-  a logical time ordered against other versions of the same Plan. Reconciling
-  divergence requires knowing who wrote each side and in what order.
-  _refines: CMP-R03, CMP-R04._
+- **CMP.DM-R07 Versions are attributable.** Each version records its author.
+  Reconciling divergence requires knowing who wrote each side. Order is not
+  recorded but derived from the lineage: a counter cannot order divergent
+  siblings, since neither observed the other, and where one version does precede
+  another the lineage already says so. _refines: CMP-R03, CMP-R04, CMP-R10._
+
+- **CMP.DM-R07a Repeating a mutation does not repeat its effect.** A mutation
+  applied twice produces one version. This must follow from the data — an
+  identical mutation yields an identical version, therefore the same identity —
+  rather than from a token a caller supplies and could supply wrongly.
+  _refines: CMP-R02, CMP-R10._
+
+- **CMP.DM-R07b A revision must change something.** A version that alters no
+  Step and no goal is refused. Without this, a retry whose rationale was
+  reworded produces a permanent duplicate that no derived value can detect,
+  because the bodies genuinely differ. The cost is that a deliberate non-change
+  cannot be recorded. _refines: CMP-R02, CMP-R03._
 
 ### Identity
 
@@ -89,6 +102,18 @@
 - **CMP.DM-R13 Only Compass judges completion.** An external record never
   completes a Step; completion follows from the Step's own acceptance criterion.
   _refines: CMP-R01._
+
+- **CMP.DM-R13a Evidence is a claim with a recorded author.** Compass records
+  who made a claim and does not adjudicate whether it is true. It must not imply
+  attestation it cannot perform. _refines: CMP-R01, CMP-T02._
+
+- **CMP.DM-R13b Predicates bind recorded fields, never claimed ones.** A
+  predicate term naming a recorded field of an evidence record binds that
+  recorded field. Claimed attributes must not shadow recorded field names, and
+  an attempt to write such an attribute is refused. Without this, a criterion
+  requiring a named approver is satisfiable by anyone willing to write that name
+  — an acceptance indistinguishable from a genuine one.
+  _refines: CMP-R01, CMP-R10._
 
 ### Readiness
 

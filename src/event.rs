@@ -23,6 +23,34 @@ use crate::model::EXT;
 use crate::predicate::Evidence;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// The names Compass records on an event itself, as opposed to the `@attrs`
+/// a writer supplies (decision 0008, CMP.DM-R13b).
+///
+/// These names are reserved. A predicate term naming one binds the recorded
+/// value; an evidence attribute using one is refused. Keep this in step with
+/// [`Event::render`] — every key written into the `@event` block belongs here,
+/// or a writer regains a name that a predicate would read as recorded.
+pub const RECORDED_FIELDS: [&str; 10] = [
+    "id",
+    "at",
+    "wall",
+    "plan",
+    "step",
+    "version",
+    "actor",
+    "kind",
+    "evidence_kind",
+    "note",
+];
+
+/// Whether `name` is recorded by Compass rather than claimed by a writer.
+///
+/// The single authority for the reserved set: write-time refusal, read-time
+/// rejection, and predicate binding all ask this, so they cannot drift apart.
+pub fn is_recorded_field(name: &str) -> bool {
+    RECORDED_FIELDS.contains(&name)
+}
+
 /// What kind of progress an event records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
@@ -83,11 +111,51 @@ pub struct Event {
 
 impl Event {
     /// Reduce to the form acceptance evaluates over, if this is evidence.
+    ///
+    /// The recorded fields travel with the claim, so a criterion naming an
+    /// approver is judged against the identity Compass observed rather than
+    /// one the writer supplied (decision 0008).
     pub fn as_evidence(&self) -> Option<Evidence> {
         match (self.kind, &self.evidence_kind) {
-            (EventKind::Evidence, Some(k)) => Some(Evidence::new(k, self.attrs.clone())),
+            (EventKind::Evidence, Some(k)) => {
+                Some(Evidence::new(k, self.attrs.clone()).with_recorded(self.recorded_fields()))
+            }
             _ => None,
         }
+    }
+
+    /// The reserved fields of this event, as predicate-visible values.
+    pub fn recorded_fields(&self) -> Vec<(String, String)> {
+        let mut out = vec![
+            ("id".to_string(), self.id.clone()),
+            ("at".to_string(), self.at.to_string()),
+            ("wall".to_string(), self.wall.to_string()),
+            ("plan".to_string(), self.plan.clone()),
+            ("step".to_string(), self.step.clone()),
+            ("version".to_string(), self.version.clone()),
+            ("actor".to_string(), self.actor.clone()),
+            ("kind".to_string(), self.kind.as_str().to_string()),
+        ];
+        if let Some(k) = &self.evidence_kind {
+            out.push(("evidence_kind".to_string(), k.clone()));
+        }
+        if let Some(n) = &self.note {
+            out.push(("note".to_string(), n.clone()));
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    /// The first attribute key that shadows a recorded field, if any.
+    ///
+    /// Shadowing is refused rather than sanitised: renaming or dropping the
+    /// attribute would leave a plan authored against a criterion that could
+    /// never have meant what it appeared to (decision 0008).
+    pub fn shadowing_attr(attrs: &[(String, String)]) -> Option<&str> {
+        attrs
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .find(|k| is_recorded_field(k))
     }
 
     pub fn render(&self) -> String {
@@ -144,6 +212,16 @@ impl Event {
                 v
             })
             .unwrap_or_default();
+
+        // A file Compass wrote can never carry a shadowing attribute, so this
+        // only fires on one authored elsewhere. Rejecting is what makes such a
+        // file visible as a rejected file rather than quietly inert evidence.
+        if let Some(k) = Event::shadowing_attr(&attrs) {
+            return Err(ParseError::new(format!(
+                "attribute `{k}` shadows the recorded field `{k}`; recorded fields are reserved \
+                 and a predicate term naming one binds what Compass recorded (decision 0008)"
+            )));
+        }
 
         let evidence_kind = eb.get("evidence_kind").map(|s| s.to_string());
         if kind == EventKind::Evidence && evidence_kind.is_none() {
@@ -292,6 +370,53 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n");
             assert!(Event::parse(&text).is_err(), "missing `{field}` must fail");
+        }
+    }
+
+    #[test]
+    fn evidence_carries_the_recorded_actor() {
+        let ev = evidence_sample().as_evidence().unwrap();
+        assert_eq!(
+            ev.recorded
+                .iter()
+                .find(|(k, _)| k == "actor")
+                .map(|(_, v)| v.as_str()),
+            Some("cos")
+        );
+    }
+
+    #[test]
+    fn a_file_carrying_a_shadowing_attribute_is_rejected() {
+        // Compass will not write one, so this is a file authored elsewhere.
+        // It is refused rather than read with the attribute quietly inert:
+        // a rejected file is visible, an ignored attribute is not.
+        let mut e = evidence_sample();
+        e.attrs.push(("actor".into(), "editor".into()));
+        let err = Event::parse(&e.render()).unwrap_err();
+        assert!(err.message.contains("actor"), "{err}");
+        assert!(err.message.contains("shadows"), "{err}");
+    }
+
+    #[test]
+    fn every_rendered_event_key_is_a_recorded_field() {
+        // The reserved set is the contract between writing, reading and
+        // predicate binding. A key rendered into `@event` but missing here
+        // would be a name a writer could reclaim.
+        let mut e = evidence_sample();
+        e.note = Some("a note".into());
+        for line in e.render().lines() {
+            let Some((key, _)) = line.split_once(" = ") else {
+                continue;
+            };
+            let key = key.trim();
+            // The `@attrs` block is claimed, not recorded.
+            if e.attrs.iter().any(|(k, _)| k == key) {
+                continue;
+            }
+            assert!(
+                is_recorded_field(key),
+                "`{key}` is written by Compass but not reserved"
+            );
         }
     }
 

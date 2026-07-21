@@ -61,21 +61,52 @@ pub enum Pred {
 }
 
 /// One recorded evidence event, reduced to what acceptance evaluates over.
+///
+/// The two field sets are not interchangeable (decision 0008, CMP.DM-R13b).
+/// `recorded` holds values Compass wrote from what it observed — the acting
+/// identity above all — and the writer did not choose them. `attrs` holds
+/// values the writer chose entirely. A predicate term naming a recorded field
+/// binds `recorded`; nothing else can reach that name, because an attribute
+/// shadowing a recorded field name is refused at write time and rejected on
+/// read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Evidence {
     pub kind: String,
     pub attrs: Vec<(String, String)>,
+    /// Fields Compass recorded rather than the writer claimed, sorted by key.
+    pub recorded: Vec<(String, String)>,
 }
 
 impl Evidence {
+    /// Evidence with claimed attributes only. Predicate terms naming a
+    /// recorded field will not bind, which is the honest answer for evidence
+    /// carrying no recorded context.
     pub fn new(kind: impl Into<String>, attrs: Vec<(String, String)>) -> Evidence {
         Evidence {
             kind: kind.into(),
             attrs,
+            recorded: Vec::new(),
         }
     }
 
+    /// Attach the fields Compass recorded. Keys here always win over `attrs`.
+    pub fn with_recorded(mut self, recorded: Vec<(String, String)>) -> Evidence {
+        self.recorded = recorded;
+        self.recorded.sort_by(|a, b| a.0.cmp(&b.0));
+        self
+    }
+
+    /// Resolve a predicate term. A recorded field name never falls through to
+    /// an attribute: if the recorded value is absent, the term does not bind
+    /// at all, rather than binding whatever the writer claimed.
     fn get(&self, key: &str) -> Option<&str> {
+        if crate::event::is_recorded_field(key) {
+            return self
+                .recorded
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str());
+        }
         self.attrs
             .iter()
             .find(|(k, _)| k == key)
@@ -407,6 +438,10 @@ mod tests {
         )
     }
 
+    fn ev_by(kind: &str, actor: &str, attrs: &[(&str, &str)]) -> Evidence {
+        ev(kind, attrs).with_recorded(vec![("actor".into(), actor.into())])
+    }
+
     fn p(src: &str) -> Pred {
         parse(src).unwrap_or_else(|e| panic!("parse `{src}` failed: {e}"))
     }
@@ -624,6 +659,46 @@ mod tests {
             assert_eq!(once, twice, "`{src}` did not round trip via `{text}`");
             assert_eq!(text, twice.to_string(), "rendering is not a fixed point");
         }
+    }
+
+    // --- recorded fields bind, claims do not (decision 0008) -------------
+
+    #[test]
+    fn a_term_naming_a_recorded_field_binds_what_was_recorded() {
+        let genuine = ev_by("review", "editor", &[("verdict", "approved")]);
+        assert!(p("review(actor=editor, verdict=approved)").eval(&[genuine]));
+    }
+
+    #[test]
+    fn a_claimed_actor_never_satisfies_a_term_naming_the_recorded_one() {
+        // The forgery decision 0008 closes: recorded `writer`, claimed
+        // `editor`. Evidence in this shape can no longer be written, but the
+        // binding rule must hold on its own, whatever a file contains.
+        let forged = ev_by(
+            "review",
+            "writer",
+            &[("actor", "editor"), ("verdict", "approved")],
+        );
+        assert!(!p("review(actor=editor, verdict=approved)").eval(std::slice::from_ref(&forged)));
+        // And it binds the recorded value, so the truth is still expressible.
+        assert!(p("review(actor=writer)").eval(&[forged]));
+    }
+
+    #[test]
+    fn a_recorded_term_does_not_fall_back_to_an_attribute() {
+        // Evidence with no recorded actor at all: the term must simply fail
+        // to bind rather than reach for the claim of the same name.
+        let claimed = ev("review", &[("actor", "editor")]);
+        assert!(!p("review(actor=editor)").eval(&[claimed]));
+    }
+
+    #[test]
+    fn explaining_a_recorded_term_names_the_predicate() {
+        let forged = ev_by("review", "writer", &[("verdict", "approved")]);
+        let why = p("review(actor=editor, verdict=approved)")
+            .explain(&[forged])
+            .expect("unsatisfied");
+        assert!(why.contains("actor=editor"), "{why}");
     }
 
     #[test]

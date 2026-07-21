@@ -15,15 +15,15 @@ named by a minted `PlanRef`.
 | `plan` | the Plan this version belongs to |
 | `parent` | each predecessor; none for the first, several for a reconciliation |
 | `author` | who authored the revision |
-| `at` | logical time, ordered against other versions of this Plan |
 | `why` | the Rationale — required |
 | `goal` | the intent being pursued |
 | `step` | zero or more Steps |
 | `retired` | optional decommission flag |
 
-`at` is a logical counter, not wall-clock time: machines disagree about clocks
-and agree about causality, and ordering two sides of a divergence is a causal
-question.
+There is no ordering field. A counter cannot order divergent siblings — neither
+observed the other, so both would carry the same value — and where one version
+precedes another, the lineage already records it. Order is derived; only
+authorship is stated.
 
 A version is identified by its content. Two versions with identical content are
 the same version; any difference makes a different one. This is what makes

@@ -10,6 +10,7 @@
 pub mod block;
 pub mod catalog;
 pub mod chain;
+pub mod change;
 pub mod cli;
 pub mod cmd;
 pub mod convergence;

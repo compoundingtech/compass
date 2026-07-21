@@ -10,6 +10,7 @@
 
 use crate::catalog::{self, Admitted, PlanStore};
 use crate::chain::{self, Analysis};
+use crate::change::{self, Basis, StepChange, VersionChange};
 use crate::cli::{Command, Invocation, StepEdit, EXIT_FAILURE};
 use crate::convergence::Convergence;
 use crate::event::{Event, EventKind};
@@ -22,6 +23,7 @@ use crate::style as s;
 use crate::version as build;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
 pub struct Output {
     pub text: String,
     pub json: Json,
@@ -138,7 +140,7 @@ fn head_line(a: &Admitted, index: usize, total: usize, orphan: bool) -> String {
         s::bold(&label),
         s::bold(&s::short(&a.hash)),
         a.version.author,
-        s::dim(&format!("at={} seq={}", a.version.at, a.version.seq)),
+        s::dim(&format!("seq={}", a.version.seq)),
         mark
     )
 }
@@ -149,7 +151,6 @@ fn head_json(a: &Admitted, orphan: bool) -> Json {
         ("plan", Json::str(&a.version.plan)),
         ("seq", Json::num(a.version.seq as i64)),
         ("author", Json::str(&a.version.author)),
-        ("at", Json::num(a.version.at as i64)),
         ("why", Json::str(&a.version.why)),
         ("goal", Json::str(&a.version.goal)),
         ("retired", Json::Bool(a.version.retired)),
@@ -236,12 +237,15 @@ fn problems_block(plan: &str, store: &PlanStore, an: &Analysis) -> String {
 
     if an.diverged() {
         out.push_str(&format!(
-            "{}  intent diverged — {} version(s) share a predecessor\n\n",
+            "{}  intent diverged — {} share a predecessor\n\n",
             s::warning(),
-            an.divergences
-                .iter()
-                .map(|d| d.children.len())
-                .sum::<usize>()
+            s::count(
+                an.divergences
+                    .iter()
+                    .map(|d| d.children.len())
+                    .sum::<usize>(),
+                "version"
+            )
         ));
         for d in an.divergences.iter().take(3) {
             let parent = d
@@ -250,13 +254,13 @@ fn problems_block(plan: &str, store: &PlanStore, an: &Analysis) -> String {
                 .map(s::short)
                 .unwrap_or_else(|| "(no predecessor — several origins)".to_string());
             out.push_str(&format!("  {} {}\n", s::bold("from"), s::dim(&parent)));
+            // The Rationale is shown in full, wrapped. Under divergence this
+            // text is what the operator reads to decide the reconciliation,
+            // so eliding it would hide the reasoning precisely where the
+            // decision is being made (CMP-R04).
             for c in d.children.iter().take(5) {
-                out.push_str(&format!(
-                    "    {} {}  {}\n",
-                    s::short(&c.hash),
-                    c.version.author,
-                    s::dim(&s::truncate(&c.version.why, 60))
-                ));
+                out.push_str(&format!("    {} {}\n", s::short(&c.hash), c.version.author,));
+                out.push_str(&s::wrapped_block(&c.version.why, "      ", 78));
             }
             out.push_str(&s::fix(&format!("compass reconcile {plan} --why <text>")));
             out.push('\n');
@@ -330,7 +334,6 @@ fn problems_json(store: &PlanStore, an: &Analysis) -> Vec<(&'static str, Json)> 
                                             Json::obj(vec![
                                                 ("version", Json::str(&c.hash)),
                                                 ("author", Json::str(&c.version.author)),
-                                                ("at", Json::num(c.version.at as i64)),
                                                 ("why", Json::str(&c.version.why)),
                                             ])
                                         })
@@ -483,7 +486,7 @@ fn report_write(
         "  {} {}  {}\n",
         s::bold("version"),
         s::bold(&s::short(&hash)),
-        s::dim(&format!("seq={} at={} author={}", v.seq, v.at, v.author))
+        s::dim(&format!("seq={} author={}", v.seq, v.author))
     ));
     if !v.parents.is_empty() {
         text.push_str(&format!(
@@ -535,7 +538,6 @@ fn report_write(
         ("plan", Json::str(&v.plan)),
         ("version", Json::str(&hash)),
         ("seq", Json::num(v.seq as i64)),
-        ("at", Json::num(v.at as i64)),
         ("author", Json::str(&v.author)),
         ("why", Json::str(&v.why)),
         ("goal", Json::str(&v.goal)),
@@ -646,7 +648,6 @@ fn cmd_new(
         seq: 1,
         parents: vec![],
         author: author.to_string(),
-        at: 1,
         why: why.to_string(),
         goal: goal.to_string(),
         retired: false,
@@ -688,12 +689,14 @@ fn cmd_revise(
         seq: base.seq + 1,
         parents: vec![head.hash.clone()],
         author: author.to_string(),
-        at: store.next_at(),
         why: why.to_string(),
         goal: goal.unwrap_or(&base.goal).to_string(),
         retired: retire || base.retired,
         steps,
     };
+    if v.changes_nothing_from(base) {
+        return Err(empty_revision_message(plan, &head.hash));
+    }
     Version::parse(&v.render())
         .map_err(|e| format!("refusing to write an invalid version: {e}"))?;
 
@@ -708,6 +711,26 @@ fn cmd_revise(
     Ok(out)
 }
 
+/// The error for a revision that would record no change of intent
+/// (CMP.DM-R07b).
+///
+/// The likeliest way to arrive here is a *correct* retry: the earlier attempt
+/// landed, this one re-read Head, and re-applying the same edits to a version
+/// that already carries them changes nothing. So the message says where that
+/// work went, rather than only refusing.
+fn empty_revision_message(plan: &str, head: &str) -> String {
+    format!(
+        "refusing to revise {plan}: this changes no Step and no goal\n\n  \
+         head {} already carries exactly this intent.\n\n  \
+         A revision must change a Step or the goal. A revision that only restates why is\n  \
+         deliberately not expressible: nothing distinguishes it from a duplicate of the\n  \
+         version it descends from, and under no-delete replication a duplicate is permanent.\n\n  \
+         If this is a retry, the earlier attempt did land — its version is at head.\n  \
+         fix: compass show {plan}\n",
+        s::short(head)
+    )
+}
+
 /// The error for a command needing one head when there are several.
 ///
 /// The two causes need different repairs and must never be conflated.
@@ -715,12 +738,12 @@ fn ambiguous_head_message(plan: &str, an: &Analysis) -> String {
     let mut m = format!("plan {plan} has {} head members\n\n", an.head.len());
     for (i, h) in an.head.iter().enumerate() {
         m.push_str(&format!(
-            "  {}/{} {}  {}  at={}  {}\n",
+            "  {}/{} {}  {}  seq={}  {}\n",
             i + 1,
             an.head.len(),
             s::short(&h.hash),
             h.version.author,
-            h.version.at,
+            h.version.seq,
             s::truncate(&h.version.why, 50)
         ));
     }
@@ -737,6 +760,149 @@ fn ambiguous_head_message(plan: &str, an: &Analysis) -> String {
         );
     }
     m
+}
+
+// ---------------------------------------------------------------------------
+// Structural change reporting
+// ---------------------------------------------------------------------------
+
+/// The marker for a change. Never colour alone — the symbol carries it.
+fn change_mark(c: &StepChange) -> &'static str {
+    match c {
+        StepChange::Added { .. } => "+",
+        StepChange::Superseded { .. } => ">",
+        StepChange::Retired { .. } => "-",
+        StepChange::Edited { .. } => "~",
+        StepChange::Dropped { .. } => "x",
+    }
+}
+
+/// What each version did, rendered under its Rationale.
+fn changes_block(c: &VersionChange) -> String {
+    let indent = "        ";
+    let mut out = String::new();
+
+    let header = match &c.basis {
+        Basis::Root => "states the initial plan".to_string(),
+        Basis::Parent(h) => format!("changes vs {}", s::short(h)),
+        Basis::Agreed(n) => format!(
+            "reconciles {}, which agreed on a step graph; changes vs that graph",
+            s::count(*n, "predecessor")
+        ),
+        Basis::Unrecoverable(n) => format!(
+            "reconciles {}; which side's step graph it carried forward is not recorded, so no \
+             change can be derived",
+            s::count(*n, "predecessor")
+        ),
+    };
+    out.push_str(&s::wrapped_block(&header, indent, 80));
+
+    if matches!(c.basis, Basis::Unrecoverable(_)) {
+        out.push_str(&format!(
+            "{indent}  {} {}\n",
+            s::dim("now carries"),
+            if c.resulting.is_empty() {
+                s::dim("no steps")
+            } else {
+                c.resulting.join(", ")
+            }
+        ));
+        return out;
+    }
+
+    if let Some(before) = &c.goal_before {
+        out.push_str(&format!(
+            "{indent}  {} {}  {}\n",
+            s::bold("!"),
+            "goal",
+            s::dim(&format!("was {}", s::truncate(before, 56)))
+        ));
+    }
+
+    for st in &c.steps {
+        let detail = match st {
+            StepChange::Superseded { old, .. } => format!("replaces {old}"),
+            StepChange::Edited { fields, .. } => fields.join(", "),
+            _ => s::truncate(st.work(), 48),
+        };
+        out.push_str(&format!(
+            "{indent}  {} {:<11} {}  {}\n",
+            s::bold(change_mark(st)),
+            st.verb(),
+            st.id(),
+            s::dim(&detail)
+        ));
+    }
+
+    if c.is_empty() && !matches!(c.basis, Basis::Root) {
+        out.push_str(&format!(
+            "{indent}  {}\n",
+            s::dim("no change to steps or goal")
+        ));
+    }
+
+    out
+}
+
+fn changes_json(c: &VersionChange) -> Json {
+    let (basis, predecessors) = match &c.basis {
+        Basis::Root => ("root", 0),
+        Basis::Parent(_) => ("parent", 1),
+        Basis::Agreed(n) => ("agreed_predecessors", *n),
+        Basis::Unrecoverable(n) => ("unrecoverable", *n),
+    };
+    let base = match &c.basis {
+        Basis::Parent(h) => Json::str(h),
+        _ => Json::Null,
+    };
+    Json::obj(vec![
+        ("basis", Json::str(basis)),
+        ("predecessors", Json::num(predecessors as i64)),
+        ("base", base),
+        (
+            "derivable",
+            Json::Bool(!matches!(c.basis, Basis::Unrecoverable(_))),
+        ),
+        (
+            "goal_before",
+            match &c.goal_before {
+                Some(g) => Json::str(g),
+                None => Json::Null,
+            },
+        ),
+        (
+            "steps",
+            Json::arr(
+                c.steps
+                    .iter()
+                    .map(|st| {
+                        Json::obj(vec![
+                            ("change", Json::str(st.verb())),
+                            ("step", Json::str(st.id())),
+                            ("work", Json::str(st.work())),
+                            (
+                                "supersedes",
+                                match st {
+                                    StepChange::Superseded { old, .. } => Json::str(old),
+                                    _ => Json::Null,
+                                },
+                            ),
+                            (
+                                "fields",
+                                match st {
+                                    StepChange::Edited { fields, .. } => Json::strs(
+                                        fields.iter().map(|f| f.to_string()).collect::<Vec<_>>(),
+                                    ),
+                                    _ => Json::arr(vec![]),
+                                },
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("resulting_steps", Json::strs(c.resulting.clone())),
+    ])
 }
 
 fn cmd_show(root: &Path, plan: &str) -> Result<Output, String> {
@@ -781,15 +947,18 @@ fn cmd_show(root: &Path, plan: &str) -> Result<Output, String> {
         ));
         for a in &line {
             text.push_str(&format!(
-                "    {:03} {}  {}  {}\n",
+                "    {:03} {}  {}\n",
                 a.version.seq,
                 s::bold(&s::short(&a.hash)),
                 a.version.author,
-                s::dim(&format!("at={}", a.version.at))
             ));
-            for l in a.version.why.lines() {
-                text.push_str(&format!("        {}\n", s::dim(l)));
-            }
+            // Wrapped, never elided: the lineage of Rationales is the durable
+            // planning record, and it is read to understand a decision.
+            text.push_str(&s::wrapped_block(&a.version.why, "        ", 80));
+            // The Rationale and the change it explains belong together: read
+            // apart, neither can be checked against the other.
+            text.push_str(&changes_block(&change::of(&store, &a.version)));
+            text.push('\n');
         }
         chains.push(Json::obj(vec![
             ("head", Json::str(&h.hash)),
@@ -802,9 +971,9 @@ fn cmd_show(root: &Path, plan: &str) -> Result<Output, String> {
                                 ("version", Json::str(&a.hash)),
                                 ("seq", Json::num(a.version.seq as i64)),
                                 ("author", Json::str(&a.version.author)),
-                                ("at", Json::num(a.version.at as i64)),
                                 ("why", Json::str(&a.version.why)),
                                 ("parent", Json::strs(a.version.parents.clone())),
+                                ("changed", changes_json(&change::of(&store, &a.version))),
                             ])
                         })
                         .collect(),
@@ -848,10 +1017,10 @@ fn cmd_show(root: &Path, plan: &str) -> Result<Output, String> {
     text.push_str(&format!(
         "\n{}\n",
         s::dim(&format!(
-            "{} versions · {} head · {} events · {}",
-            store.versions.len(),
-            an.head.len(),
-            store.events.len(),
+            "{} · {} · {} · {}",
+            s::count(store.versions.len(), "version"),
+            s::count_of(an.head.len(), "head", "heads"),
+            s::count(store.events.len(), "event"),
             an.state()
         ))
     ));
@@ -913,7 +1082,7 @@ fn cmd_ready(root: &Path, plan: &str) -> Result<Output, String> {
             s::bold(&label),
             s::bold(&s::short(&r.head)),
             r.author,
-            s::dim(&format!("at={} seq={}", r.at, r.seq)),
+            s::dim(&format!("seq={}", r.seq)),
             if r.orphan {
                 format!(" {}", s::red("orphan"))
             } else {
@@ -996,7 +1165,6 @@ fn readiness_json(r: &HeadReadiness) -> Json {
         ("version", Json::str(&r.head)),
         ("seq", Json::num(r.seq as i64)),
         ("author", Json::str(&r.author)),
-        ("at", Json::num(r.at as i64)),
         ("orphan", Json::Bool(r.orphan)),
         (
             "step",
@@ -1051,13 +1219,7 @@ fn observed_against<'a>(an: &Analysis<'a>, step: &str) -> Result<(&'a Admitted, 
         _ => {
             let chosen = carrying
                 .iter()
-                .max_by(|a, b| {
-                    (a.version.at, a.version.seq, &a.hash).cmp(&(
-                        b.version.at,
-                        b.version.seq,
-                        &b.hash,
-                    ))
-                })
+                .max_by(|a, b| (a.version.seq, &a.hash).cmp(&(b.version.seq, &b.hash)))
                 .expect("non-empty");
             Ok((chosen, true))
         }
@@ -1077,6 +1239,22 @@ fn record_event(
     evidence_kind: Option<String>,
     attrs: Vec<(String, String)>,
 ) -> Result<Output, String> {
+    // Refused, not sanitised (decision 0008, CMP.DM-R13b). A predicate term
+    // naming a recorded field binds what Compass recorded, so an attribute of
+    // the same name could never mean what its author intended — accepting it
+    // silently would let a plan be authored against a criterion that can never
+    // hold the way it reads.
+    if let Some(k) = Event::shadowing_attr(&attrs) {
+        return Err(format!(
+            "refusing to record evidence: attribute `{k}` shadows the recorded field `{k}`\n  \
+             Compass records `{k}` itself, and an `accept` term naming `{k}` binds that recorded \
+             value — never an attribute.\n  \
+             reserved: {}\n  \
+             fix: drop `{k}=…`, or name the claim something else",
+            crate::event::RECORDED_FIELDS.join(", ")
+        ));
+    }
+
     let (against, ambiguous) = observed_against(an, step)?;
     let conv = Convergence::probe();
 
@@ -1135,7 +1313,7 @@ fn record_event(
     }
     if ambiguous {
         text.push_str(&s::note(
-            "head is divergent and several members carry this step; recorded against the latest",
+            "head is divergent and several members carry this step; recorded against the deepest in the lineage",
         ));
         text.push('\n');
     }
@@ -1304,11 +1482,11 @@ fn cmd_status(root: &Path) -> Result<Output, String> {
             s::bold(plan),
             s::truncate(&goal, 44),
             s::dim(&format!(
-                "{}{} · heads({}) · {} versions",
+                "{}{} · heads({}) · {}",
                 an.state(),
                 if retired { " · retired" } else { "" },
                 an.head.len(),
-                store.versions.len()
+                s::count(store.versions.len(), "version")
             ))
         ));
 
@@ -1343,8 +1521,8 @@ fn cmd_status(root: &Path) -> Result<Output, String> {
     text.push_str(&format!(
         "\n{}\n",
         s::dim(&format!(
-            "{} plans · {} diverged · {} orphaned · {} rejected",
-            rows.len(),
+            "{} · {} diverged · {} orphaned · {} rejected",
+            s::count(rows.len(), "plan"),
             diverged,
             orphaned,
             rejected
@@ -1474,7 +1652,6 @@ fn cmd_reconcile(
         seq: chain::next_seq(&an.head),
         parents,
         author: author.to_string(),
-        at: store.next_at(),
         why: why.to_string(),
         goal,
         retired: false,
@@ -1532,11 +1709,11 @@ fn cmd_verify(root: &Path, plan: Option<&str>, all: bool) -> Result<Output, Stri
             marker,
             s::bold(p),
             s::dim(&format!(
-                "{} admitted · {} rejected · {} head · {} orphan · {}",
+                "{} admitted · {} rejected · {} · {} · {}",
                 store.versions.len(),
                 bad,
-                an.head.len(),
-                an.orphans.len(),
+                s::count_of(an.head.len(), "head", "heads"),
+                s::count(an.orphans.len(), "orphan"),
                 an.state()
             ))
         ));
@@ -1564,9 +1741,9 @@ fn cmd_verify(root: &Path, plan: Option<&str>, all: bool) -> Result<Output, Stri
     text.push_str(&format!(
         "\n{}\n",
         s::dim(&format!(
-            "{} plans · {} rejected file(s)",
-            plans.len(),
-            failures
+            "{} · {} rejected",
+            s::count(plans.len(), "plan"),
+            s::count(failures, "file")
         ))
     ));
     text.push('\n');
@@ -1593,5 +1770,498 @@ pub fn resolved_root(inv: &Invocation) -> Result<PathBuf, String> {
     match &inv.catalog {
         Some(p) => Ok(p.clone()),
         None => catalog::root(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// A scratch catalog that cleans itself up.
+    struct Scratch {
+        root: PathBuf,
+    }
+
+    impl Scratch {
+        fn new(tag: &str) -> Scratch {
+            let base = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+            let unique = refs::mint(RefKind::Event).unwrap();
+            let root = PathBuf::from(base).join(format!("compass-cmd-{tag}-{unique}"));
+            catalog::init(&root).unwrap();
+            Scratch { root }
+        }
+
+        /// Run one invocation against this catalog, as the CLI would.
+        fn run(&self, args: &[&str]) -> Result<Output, String> {
+            let mut argv = vec!["--catalog".to_string(), self.root.display().to_string()];
+            argv.extend(args.iter().map(|s| s.to_string()));
+            execute(&crate::cli::parse(&argv)?)
+        }
+
+        fn plan(&self) -> String {
+            catalog::list_plans(&self.root).unwrap().remove(0)
+        }
+
+        fn store(&self) -> PlanStore {
+            catalog::load_plan(&self.root, &self.plan()).unwrap()
+        }
+
+        fn version_count(&self) -> usize {
+            self.store().versions.len()
+        }
+
+        /// The single head member. Panics if the plan has diverged.
+        fn head(&self) -> Version {
+            let store = self.store();
+            let an = chain::analyze(&store);
+            assert_eq!(an.head.len(), 1, "expected one head member");
+            an.head[0].version.clone()
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            fn writable(p: &Path) -> std::io::Result<()> {
+                if p.is_dir() {
+                    for e in fs::read_dir(p)? {
+                        writable(&e?.path())?;
+                    }
+                } else if p.is_file() {
+                    let mut perms = fs::metadata(p)?.permissions();
+                    #[allow(clippy::permissions_set_readonly_false)]
+                    perms.set_readonly(false);
+                    fs::set_permissions(p, perms)?;
+                }
+                Ok(())
+            }
+            let _ = writable(&self.root);
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// A plan with one step, ready to be revised.
+    fn a_plan(tag: &str) -> (Scratch, String, String) {
+        let s = Scratch::new(tag);
+        s.run(&[
+            "new",
+            "--goal",
+            "Nested groups parse correctly",
+            "--why",
+            "Parser rejects nested groups.",
+            "--add-step",
+            "Reproduce with a failing test",
+            "--accept",
+            "test(name=nested, status=fail)",
+        ])
+        .unwrap();
+        let plan = s.plan();
+        let step = s.head().steps[0].id.clone();
+        (s, plan, step)
+    }
+
+    /// The regression decision 0007 exists for: an agent revises, loses its
+    /// process before it can read the answer, and — correctly — retries.
+    ///
+    /// The retry re-reads the catalog and sees its own landed write, so it
+    /// cannot produce the same bytes as its first attempt: head has moved, so
+    /// the candidate names a different predecessor. What stops the duplicate
+    /// is that re-applying the same edits to the version that already carries
+    /// them changes no Step and no goal, and such a revision is refused. The
+    /// plan ends with exactly one new version and one stated reason for it.
+    #[test]
+    fn an_identical_revise_issued_twice_records_one_version() {
+        let (s, plan, step) = a_plan("crash-retry");
+        let before = s.version_count();
+
+        let attempt = [
+            "revise",
+            &plan,
+            "--why",
+            "Reproduction showed the tokenizer, not the grammar, drops it.",
+            "--edit-step",
+            &step,
+            "--work",
+            "Fix the tokenizer",
+        ];
+
+        s.run(&attempt).expect("the first attempt lands");
+        assert_eq!(s.version_count(), before + 1);
+        let after_first = s.head();
+
+        // The response never reached the agent. It retries the same mutation.
+        let err = s
+            .run(&attempt)
+            .expect_err("the retry must not record a second version");
+        assert!(
+            err.contains("changes no Step and no goal"),
+            "the refusal must say what is missing: {err}"
+        );
+        assert!(
+            err.contains("did land"),
+            "and must say where the earlier attempt went: {err}"
+        );
+
+        assert_eq!(
+            s.version_count(),
+            before + 1,
+            "a correct retry must leave one version, not two"
+        );
+        assert_eq!(s.head(), after_first, "and head must be unmoved");
+        assert_eq!(
+            s.store()
+                .versions
+                .iter()
+                .filter(|a| a.version.why.contains("not the grammar"))
+                .count(),
+            1,
+            "the rationale must appear once in the record, not twice"
+        );
+    }
+
+    /// The case no derived value can catch: the retry's bodies genuinely
+    /// differ, because the rationale was reworded. Only the rule refuses it.
+    #[test]
+    fn a_revision_differing_only_in_its_rationale_is_refused() {
+        let (s, plan, step) = a_plan("reworded-retry");
+        s.run(&[
+            "revise",
+            &plan,
+            "--why",
+            "The tokenizer drops it.",
+            "--edit-step",
+            &step,
+            "--work",
+            "Fix the tokenizer",
+        ])
+        .unwrap();
+        let before = s.version_count();
+
+        // Same mutation, different words for why.
+        let err = s
+            .run(&[
+                "revise",
+                &plan,
+                "--why",
+                "It is the tokenizer that drops it, not the grammar.",
+                "--edit-step",
+                &step,
+                "--work",
+                "Fix the tokenizer",
+            ])
+            .expect_err("a rationale-only revision is not expressible");
+        assert!(err.contains("changes no Step and no goal"), "{err}");
+        assert!(
+            err.contains("only restates why"),
+            "the refusal must name the case it is closing: {err}"
+        );
+
+        // And with no step edit at all — a bare change of mind.
+        let err = s
+            .run(&[
+                "revise",
+                &plan,
+                "--why",
+                "We reconsidered and are keeping this plan.",
+            ])
+            .expect_err("a deliberate non-change is deliberately not recordable");
+        assert!(err.contains("changes no Step and no goal"), "{err}");
+
+        assert_eq!(s.version_count(), before);
+    }
+
+    /// Retirement changes the plan, so the empty-revision rule must let it
+    /// through — of the plan and of a single step alike.
+    #[test]
+    fn retirement_is_not_an_empty_revision() {
+        let (s, plan, step) = a_plan("retire");
+        let before = s.version_count();
+
+        s.run(&[
+            "revise",
+            &plan,
+            "--why",
+            "Superseded by the rewrite.",
+            "--retire",
+        ])
+        .expect("retiring the plan changes it");
+        assert_eq!(s.version_count(), before + 1);
+        assert!(s.head().retired);
+
+        s.run(&[
+            "revise",
+            &plan,
+            "--why",
+            "This step is no longer worth doing.",
+            "--retire-step",
+            &step,
+        ])
+        .expect("retiring a step changes it");
+        assert_eq!(s.version_count(), before + 2);
+        assert!(s.head().steps[0].retired);
+
+        // Retiring what is already retired changes nothing, and is refused —
+        // which is the rule working, not an exception to it.
+        let err = s
+            .run(&[
+                "revise",
+                &plan,
+                "--why",
+                "Retiring it again.",
+                "--retire-step",
+                &step,
+            ])
+            .expect_err("a second retirement of the same step changes nothing");
+        assert!(err.contains("changes no Step and no goal"), "{err}");
+        assert_eq!(s.version_count(), before + 2);
+    }
+
+    /// A Reconciliation always changes the predecessor set, so it is never an
+    /// empty revision — even when both sides carry an identical step graph and
+    /// goal, which is precisely when the naive rule would misfire.
+    #[test]
+    fn reconciliation_is_not_an_empty_revision() {
+        let (s, plan, _step) = a_plan("reconcile");
+        let base = s.head();
+        let base_hash = base.hash();
+
+        // Two machines revise the same parent, differing only in the words —
+        // so the two sides agree on every step and on the goal.
+        for why in ["The tokenizer drops it.", "The grammar is fine."] {
+            let side = Version {
+                plan: plan.clone(),
+                seq: base.seq + 1,
+                parents: vec![base_hash.clone()],
+                author: "cos".into(),
+                why: why.into(),
+                goal: base.goal.clone(),
+                retired: false,
+                steps: base.steps.clone(),
+            };
+            catalog::write_version(&s.root, &side).unwrap();
+        }
+        let before = s.version_count();
+        assert!(chain::analyze(&s.store()).diverged());
+
+        s.run(&[
+            "reconcile",
+            &plan,
+            "--why",
+            "Both sides said the same thing.",
+        ])
+        .expect("a reconciliation joins predecessors, so it always changes something");
+
+        assert_eq!(s.version_count(), before + 1);
+        let head = s.head();
+        assert_eq!(head.parents.len(), 2, "it names both sides");
+        assert_eq!(head.steps, base.steps, "carrying the agreed graph forward");
+    }
+
+    // --- evidence is a claim (decision 0008) -----------------------------
+
+    /// A plan whose one step demands approval from a named actor.
+    fn a_plan_needing_an_editor(tag: &str) -> (Scratch, String, String) {
+        let s = Scratch::new(tag);
+        s.run(&[
+            "new",
+            "--goal",
+            "Publish the piece",
+            "--why",
+            "It is drafted and needs a second reader.",
+            "--add-step",
+            "Get the draft approved",
+            "--accept",
+            "review(actor=editor, verdict=approved)",
+        ])
+        .unwrap();
+        let plan = s.plan();
+        let step = s.head().steps[0].id.clone();
+        (s, plan, step)
+    }
+
+    fn accepted(s: &Scratch) -> bool {
+        let store = s.store();
+        let an = chain::analyze(&store);
+        let r = readiness::for_head(&store, an.head[0], false);
+        r.steps[0].state == StepState::Accepted
+    }
+
+    #[test]
+    fn a_writer_cannot_forge_an_approval_by_claiming_the_actor() {
+        let (s, plan, step) = a_plan_needing_an_editor("forge");
+
+        // The forgery: the writer names someone else in the attributes.
+        let err = s
+            .run(&[
+                "--author",
+                "writer",
+                "evidence",
+                &plan,
+                &step,
+                "review",
+                "actor=editor",
+                "verdict=approved",
+            ])
+            .expect_err("an attribute shadowing a recorded field must be refused");
+        assert!(err.contains("actor"), "{err}");
+        assert!(err.contains("shadows"), "{err}");
+
+        // Nothing was written, so nothing was accepted.
+        assert!(s.store().events.is_empty());
+        assert!(!accepted(&s));
+
+        // Even the attributes the writer *may* record do not satisfy it,
+        // because the recorded actor is not the editor.
+        s.run(&[
+            "--author",
+            "writer",
+            "evidence",
+            &plan,
+            &step,
+            "review",
+            "verdict=approved",
+        ])
+        .unwrap();
+        assert!(
+            !accepted(&s),
+            "a criterion naming an approver must not be satisfiable by anyone else"
+        );
+
+        // The genuine article: recorded by the editor.
+        s.run(&[
+            "--author",
+            "editor",
+            "evidence",
+            &plan,
+            &step,
+            "review",
+            "verdict=approved",
+        ])
+        .unwrap();
+        assert!(accepted(&s), "a genuine editor approval must satisfy it");
+    }
+
+    #[test]
+    fn every_recorded_field_is_refused_as_an_evidence_attribute() {
+        let (s, plan, step) = a_plan_needing_an_editor("shadow-all");
+        for field in crate::event::RECORDED_FIELDS {
+            let err = s
+                .run(&["evidence", &plan, &step, "review", &format!("{field}=x")])
+                .expect_err(&format!("attribute `{field}` shadows a recorded field"));
+            assert!(err.contains(field), "{err}");
+        }
+    }
+
+    #[test]
+    fn an_ordinary_attribute_is_still_free() {
+        let (s, plan, step) = a_plan_needing_an_editor("free-attr");
+        s.run(&["evidence", &plan, &step, "review", "reviewer=editor"])
+            .expect("`reviewer` is not a recorded field and stays available");
+        assert_eq!(s.store().events.len(), 1);
+    }
+
+    // --- structural change reporting -------------------------------------
+
+    #[test]
+    fn show_reports_what_each_version_changed() {
+        let (s, plan, step) = a_plan("show-changes");
+        s.run(&[
+            "revise",
+            &plan,
+            "--why",
+            "Adding the fix once the repro exists.",
+            "--add-step",
+            "Fix the parser",
+            "--accept",
+            "test(name=nested, status=pass)",
+        ])
+        .unwrap();
+        s.run(&[
+            "revise",
+            &plan,
+            "--why",
+            "The repro is no longer the shape we need.",
+            "--retire-step",
+            &step,
+        ])
+        .unwrap();
+
+        let out = s.run(&["show", &plan]).unwrap();
+        assert!(out.text.contains("states the initial plan"), "{}", out.text);
+        assert!(out.text.contains("changes vs "), "{}", out.text);
+        assert!(out.text.contains("added"), "{}", out.text);
+        assert!(out.text.contains("retired"), "{}", out.text);
+    }
+
+    #[test]
+    fn a_divergent_rationale_is_never_elided() {
+        let (s, plan, _step) = a_plan("full-why");
+        let long = "One of the three changed its storage engine mid-benchmark, so the numbers \
+                    are not comparable and the conclusion drawn from them does not stand.";
+        let base = s.head();
+        for author in ["a", "b"] {
+            let side = Version {
+                plan: plan.clone(),
+                seq: base.seq + 1,
+                parents: vec![base.hash()],
+                author: author.into(),
+                why: long.to_string(),
+                goal: base.goal.clone(),
+                retired: false,
+                steps: base.steps.clone(),
+            };
+            catalog::write_version(&s.root, &side).unwrap();
+        }
+        assert!(chain::analyze(&s.store()).diverged());
+
+        let out = s.run(&["status"]).unwrap();
+        assert!(
+            !out.text.contains('…'),
+            "a rationale was elided:\n{}",
+            out.text
+        );
+        // Every word survives, even though the line does not.
+        for word in long.split_whitespace() {
+            assert!(
+                out.text.contains(word),
+                "`{word}` missing from:\n{}",
+                out.text
+            );
+        }
+    }
+
+    #[test]
+    fn counts_agree_with_their_nouns() {
+        let (s, plan, step) = a_plan("plurals");
+        s.run(&["progress", &plan, &step, "start"]).unwrap();
+        let out = s.run(&["show", &plan]).unwrap();
+        assert!(out.text.contains("1 event"), "{}", out.text);
+        assert!(!out.text.contains("1 events"), "{}", out.text);
+        assert!(out.text.contains("1 head"), "{}", out.text);
+        assert!(!out.text.contains("1 heads"), "{}", out.text);
+
+        s.run(&["progress", &plan, &step, "update"]).unwrap();
+        let out = s.run(&["show", &plan]).unwrap();
+        assert!(out.text.contains("2 events"), "{}", out.text);
+    }
+
+    /// Nothing a command reports may name a field the model no longer has.
+    #[test]
+    fn no_command_reports_a_logical_clock_for_a_version() {
+        let (s, plan, _step) = a_plan("no-clock");
+        for args in [
+            vec!["show", &plan],
+            vec!["ready", &plan],
+            vec!["status"],
+            vec!["verify", &plan],
+        ] {
+            let out = s.run(&args).unwrap();
+            assert!(
+                !out.text.contains("at="),
+                "`{}` still reports a version clock:\n{}",
+                args.join(" "),
+                out.text
+            );
+        }
     }
 }

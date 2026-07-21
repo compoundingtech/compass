@@ -14,11 +14,16 @@ _Avoid_: ticket, issue, epic, backlog, board
 
 **Plan Version**:
 An immutable, content-addressed snapshot of a Plan's structural intent. It
-carries a Rationale, its author, a logical time, and the content hash of each
-predecessor — none for the first version, one ordinarily, several when
-reconciling a Divergence. Versions are created for structural change to intent,
-never for operational facts.
-_Avoid_: revision row, draft, resourceVersion
+carries a Rationale, its author, and the content hash of each predecessor — none
+for the first version, one ordinarily, several when reconciling a Divergence.
+Versions are created for structural change to intent, never for operational
+facts, and a version that changes neither a Step nor the goal is refused.
+
+Identity is the hash of the whole body, with nothing excluded, so the name
+always determines the content. Two versions with identical content are one
+version: repeating a mutation therefore cannot repeat its effect, and no
+caller-supplied token is involved.
+_Avoid_: revision row, draft, resourceVersion, logical clock
 
 **Rationale**:
 The required statement on every Plan Version explaining why intent changed. It

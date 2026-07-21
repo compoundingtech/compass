@@ -1,34 +1,18 @@
 # Open Questions: Compass
 
-**DQ01 — What governs mutation idempotency?**
-A caller-supplied idempotency key and a content address answer different
-questions. A key answers "did I already apply this mutation?", surviving a
-reworded but equivalent retry. A content address answers "which version is
-this?", and is what makes divergence visible under union replication. Using only
-keys loses corruption-evidence as a first-class property; using only content
-addresses means a reworded retry writes a spurious version.
+**DQ01 — Resolved.** See
+[decision 0007](./.decisions/0007-identity-is-derived-never-asserted.md).
+Identity is a hash of the whole body with nothing excluded; the ordering field
+that broke retry idempotency is removed, and a revision that changes nothing is
+refused. No caller-supplied key exists, because an asserted value can be
+supplied wrongly and the consequence would be permanent.
 
-Both at different layers — hash for version identity, key for mutation dedup,
-with the receipt binding one to the other — is plausible but unproven, and the
-added surface may not earn its keep. Until it resolves, the ontology does not
-claim exactly-once application.
-
-Settled by exhausting a small state space: retry, reworded retry, conflicting
-key reuse, concurrent divergence, divergence followed by retry, and arrival of a
-version whose predecessor is absent. Each has an observable right answer, so the
-question is decidable without usage evidence.
-
-**DQ02 — What is the serialization syntax?**
-A declarative block syntax suits authored versions, which humans read and
-occasionally write. Progress events are machine-written and never hand-edited,
-so they have different constraints and need not share a format.
-
-Unresolved: whether accepting multiple input formats is worth the parsing
-surface for files written almost exclusively by a CLI, and whether the content
-hash is taken over raw bytes or a canonical form. Raw bytes are simpler and
-stricter; a canonical form survives reformatting, but requires the
-canonicalization to be specified and then stable permanently, since changing it
-invalidates every hash ever written.
+**DQ02 — Resolved.** See
+[decision 0009](./.decisions/0009-kdl-is-parsed-upstream-and-rendered-canonically-here.md).
+KDL, parsed by the reference implementation and rendered by a canonical form
+owned here. Identity is the hash of that canonical rendering rather than of raw
+bytes, so reformatting an authored document does not change what it is, and an
+upstream formatting change cannot invalidate stored identities.
 
 **DQ03 — What vocabulary expresses acceptance?**
 Decision 0006 establishes that acceptance is machine-checkable, which rules out

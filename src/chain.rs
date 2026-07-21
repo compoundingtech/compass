@@ -247,8 +247,14 @@ fn reachable_heads(
 /// Every ancestor of `hash` including itself, oldest first.
 ///
 /// This is the Rationale chain — the artifact the tool exists to preserve.
-/// Ordering is by logical time, then sequence, then hash, so it is total and
-/// stable even across a reconciliation of unequal-length lineages.
+///
+/// Ordering is read from the lineage: depth from the root (`seq`), then hash.
+/// Nothing records when an author wrote, and nothing needs to. Where one
+/// version precedes another the lineage already says so, and divergent
+/// siblings are by construction unordered — neither observed the other — so a
+/// recorded counter could only have invented an order it did not have. Hash
+/// breaks the remaining ties, which keeps the order total and identical on
+/// every machine holding the same versions.
 pub fn lineage<'a>(store: &'a PlanStore, hash: &str) -> Vec<&'a Admitted> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<&Admitted> = Vec::new();
@@ -265,9 +271,7 @@ pub fn lineage<'a>(store: &'a PlanStore, hash: &str) -> Vec<&'a Admitted> {
         }
     }
 
-    out.sort_by(|a, b| {
-        (a.version.at, a.version.seq, &a.hash).cmp(&(b.version.at, b.version.seq, &b.hash))
-    });
+    out.sort_by(|a, b| (a.version.seq, &a.hash).cmp(&(b.version.seq, &b.hash)));
     out
 }
 
@@ -284,13 +288,12 @@ mod tests {
     use crate::predicate::parse as pred;
     use std::path::PathBuf;
 
-    fn v(plan: &str, seq: u64, at: u64, why: &str, parents: Vec<String>) -> Admitted {
+    fn v(plan: &str, seq: u64, why: &str, parents: Vec<String>) -> Admitted {
         let version = Version {
             plan: plan.into(),
             seq,
             parents,
             author: "cos".into(),
-            at,
             why: why.into(),
             goal: "Goal".into(),
             retired: false,
@@ -317,9 +320,9 @@ mod tests {
 
     #[test]
     fn a_linear_chain_has_one_head_and_no_divergence() {
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let b = v("pl_1000000000", 2, 2, "second", vec![a.hash.clone()]);
-        let c = v("pl_1000000000", 3, 3, "third", vec![b.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let b = v("pl_1000000000", 2, "second", vec![a.hash.clone()]);
+        let c = v("pl_1000000000", 3, "third", vec![b.hash.clone()]);
         let want_head = c.hash.clone();
         let s = store(vec![a, b, c]);
         let an = analyze(&s);
@@ -333,9 +336,9 @@ mod tests {
 
     #[test]
     fn concurrent_revision_is_divergence_with_two_head_members() {
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let left = v("pl_1000000000", 2, 2, "cos side", vec![a.hash.clone()]);
-        let right = v("pl_1000000000", 2, 2, "dev side", vec![a.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let left = v("pl_1000000000", 2, "cos side", vec![a.hash.clone()]);
+        let right = v("pl_1000000000", 2, "dev side", vec![a.hash.clone()]);
         let parent = a.hash.clone();
         let s = store(vec![a, left, right]);
         let an = analyze(&s);
@@ -352,10 +355,10 @@ mod tests {
     #[test]
     fn a_missing_predecessor_is_an_orphan_not_a_divergence() {
         // Decision 0002 Amendment 1: versions 1, 2 and 4 arrive; 3 has not.
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let b = v("pl_1000000000", 2, 2, "second", vec![a.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let b = v("pl_1000000000", 2, "second", vec![a.hash.clone()]);
         let absent = "f".repeat(64);
-        let d = v("pl_1000000000", 4, 4, "fourth", vec![absent.clone()]);
+        let d = v("pl_1000000000", 4, "fourth", vec![absent.clone()]);
         let d_hash = d.hash.clone();
         let s = store(vec![a, b, d]);
         let an = analyze(&s);
@@ -377,8 +380,8 @@ mod tests {
         // The shared predecessor is absent, so nothing local proves they
         // disagreed — only that replication is behind.
         let absent = "e".repeat(64);
-        let a = v("pl_1000000000", 2, 2, "one", vec![absent.clone()]);
-        let b = v("pl_1000000000", 2, 2, "two", vec![absent.clone()]);
+        let a = v("pl_1000000000", 2, "one", vec![absent.clone()]);
+        let b = v("pl_1000000000", 2, "two", vec![absent.clone()]);
         let s = store(vec![a, b]);
         let an = analyze(&s);
 
@@ -389,12 +392,11 @@ mod tests {
 
     #[test]
     fn a_reconciliation_closes_a_divergence() {
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let left = v("pl_1000000000", 2, 2, "cos side", vec![a.hash.clone()]);
-        let right = v("pl_1000000000", 2, 2, "dev side", vec![a.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let left = v("pl_1000000000", 2, "cos side", vec![a.hash.clone()]);
+        let right = v("pl_1000000000", 2, "dev side", vec![a.hash.clone()]);
         let merge = v(
             "pl_1000000000",
-            3,
             3,
             "both were right",
             vec![left.hash.clone(), right.hash.clone()],
@@ -420,12 +422,12 @@ mod tests {
 
     #[test]
     fn a_reconciliation_can_itself_diverge() {
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let left = v("pl_1000000000", 2, 2, "cos", vec![a.hash.clone()]);
-        let right = v("pl_1000000000", 2, 2, "dev", vec![a.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let left = v("pl_1000000000", 2, "cos", vec![a.hash.clone()]);
+        let right = v("pl_1000000000", 2, "dev", vec![a.hash.clone()]);
         let parents = vec![left.hash.clone(), right.hash.clone()];
-        let m1 = v("pl_1000000000", 3, 3, "merge one way", parents.clone());
-        let m2 = v("pl_1000000000", 3, 3, "merge another way", parents);
+        let m1 = v("pl_1000000000", 3, "merge one way", parents.clone());
+        let m2 = v("pl_1000000000", 3, "merge another way", parents);
         let s = store(vec![a, left, right, m1, m2]);
         let an = analyze(&s);
 
@@ -438,12 +440,11 @@ mod tests {
     fn a_settled_divergence_stays_visible_but_stops_prompting() {
         // The chain records the disagreement forever — that argument is the
         // product. What must stop is treating it as outstanding work.
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let left = v("pl_1000000000", 2, 2, "cos", vec![a.hash.clone()]);
-        let right = v("pl_1000000000", 2, 2, "dev", vec![a.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let left = v("pl_1000000000", 2, "cos", vec![a.hash.clone()]);
+        let right = v("pl_1000000000", 2, "dev", vec![a.hash.clone()]);
         let merge = v(
             "pl_1000000000",
-            3,
             3,
             "both",
             vec![left.hash.clone(), right.hash.clone()],
@@ -459,10 +460,10 @@ mod tests {
     #[test]
     fn a_divergence_reconciled_on_only_one_side_stays_open() {
         // A version descending from just one side does not join them.
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let left = v("pl_1000000000", 2, 2, "cos", vec![a.hash.clone()]);
-        let right = v("pl_1000000000", 2, 2, "dev", vec![a.hash.clone()]);
-        let only_left = v("pl_1000000000", 3, 3, "carry on", vec![left.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let left = v("pl_1000000000", 2, "cos", vec![a.hash.clone()]);
+        let right = v("pl_1000000000", 2, "dev", vec![a.hash.clone()]);
+        let only_left = v("pl_1000000000", 3, "carry on", vec![left.hash.clone()]);
         let s = store(vec![a, left, right, only_left]);
         let an = analyze(&s);
 
@@ -473,8 +474,8 @@ mod tests {
 
     #[test]
     fn several_root_versions_are_reported_as_divergence() {
-        let a = v("pl_1000000000", 1, 1, "one origin", vec![]);
-        let b = v("pl_1000000000", 1, 1, "another origin", vec![]);
+        let a = v("pl_1000000000", 1, "one origin", vec![]);
+        let b = v("pl_1000000000", 1, "another origin", vec![]);
         let s = store(vec![a, b]);
         let an = analyze(&s);
         assert!(an.diverged());
@@ -491,9 +492,9 @@ mod tests {
 
     #[test]
     fn lineage_returns_the_rationale_chain_oldest_first() {
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let b = v("pl_1000000000", 2, 2, "second", vec![a.hash.clone()]);
-        let c = v("pl_1000000000", 3, 3, "third", vec![b.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let b = v("pl_1000000000", 2, "second", vec![a.hash.clone()]);
+        let c = v("pl_1000000000", 3, "third", vec![b.hash.clone()]);
         let tip = c.hash.clone();
         let s = store(vec![a, b, c]);
 
@@ -505,13 +506,12 @@ mod tests {
 
     #[test]
     fn lineage_of_a_reconciliation_includes_both_sides_once() {
-        let a = v("pl_1000000000", 1, 1, "first", vec![]);
-        let left = v("pl_1000000000", 2, 2, "cos", vec![a.hash.clone()]);
-        let right = v("pl_1000000000", 2, 3, "dev", vec![a.hash.clone()]);
+        let a = v("pl_1000000000", 1, "first", vec![]);
+        let left = v("pl_1000000000", 2, "cos", vec![a.hash.clone()]);
+        let right = v("pl_1000000000", 2, "dev", vec![a.hash.clone()]);
         let merge = v(
             "pl_1000000000",
             3,
-            4,
             "both",
             vec![left.hash.clone(), right.hash.clone()],
         );
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn lineage_stops_at_an_absent_predecessor() {
         let absent = "d".repeat(64);
-        let a = v("pl_1000000000", 2, 2, "orphaned", vec![absent]);
+        let a = v("pl_1000000000", 2, "orphaned", vec![absent]);
         let tip = a.hash.clone();
         let s = store(vec![a]);
         assert_eq!(lineage(&s, &tip).len(), 1);
@@ -535,8 +535,8 @@ mod tests {
 
     #[test]
     fn next_seq_follows_the_longest_predecessor() {
-        let short = v("pl_1000000000", 2, 2, "short", vec![]);
-        let long = v("pl_1000000000", 9, 3, "long", vec![]);
+        let short = v("pl_1000000000", 2, "short", vec![]);
+        let long = v("pl_1000000000", 9, "long", vec![]);
         assert_eq!(next_seq(&[&short, &long]), 10);
         assert_eq!(next_seq(&[]), 1);
     }

@@ -1,10 +1,14 @@
 //! Plan Versions and Steps — the documents Compass owns (CMP.INT-R02).
 //!
 //! A Plan Version is immutable (CMP-R02), carries a required Rationale
-//! (CMP-R03), records its author and logical time (CMP-R09), and names each
-//! predecessor by content hash. Its identity *is* the hash of its rendered
-//! bytes, so rendering must be canonical: same intent, same bytes, same hash,
-//! on every machine.
+//! (CMP-R03), records its author, and names each predecessor by content hash.
+//! Its identity *is* the hash of its rendered bytes, so rendering must be
+//! canonical: same intent, same bytes, same hash, on every machine.
+//!
+//! Identity is derived and no field is excluded from it (decision 0007), so a
+//! name always determines the content. Nothing here records a clock or a
+//! counter of what the author had seen: order is read from the lineage and
+//! attribution is the `author` field alone (CMP.DM-R07).
 
 use crate::block::{parse as parse_block, Block, Doc, ParseError};
 use crate::predicate::Pred;
@@ -61,8 +65,6 @@ pub struct Version {
     /// one ordinarily, several for a Reconciliation.
     pub parents: Vec<String>,
     pub author: String,
-    /// Logical time (CMP-R09). Lamport-style: max(seen) + 1, never wall clock.
-    pub at: u64,
     /// Required Rationale (CMP-R03).
     pub why: String,
     pub goal: String,
@@ -87,7 +89,6 @@ impl Version {
         parents.sort();
         v.set_many("parent", parents);
         v.set("author", &self.author);
-        v.set("at", self.at.to_string());
         v.set("why", &self.why);
         v.set("goal", &self.goal);
         if self.retired {
@@ -128,7 +129,6 @@ impl Version {
         let plan = vb.require("plan")?.to_string();
         let seq = parse_u64(vb.require("seq")?, "seq")?;
         let author = vb.require("author")?.to_string();
-        let at = parse_u64(vb.require("at")?, "at")?;
         let why = vb.require("why")?.to_string();
         let goal = vb.require("goal")?.to_string();
         let retired = parse_flag(vb.get("retired"), "version retired")?;
@@ -178,7 +178,6 @@ impl Version {
             seq,
             parents,
             author,
-            at,
             why,
             goal,
             retired,
@@ -271,6 +270,18 @@ impl Version {
         self.steps.iter().find(|s| s.id == id)
     }
 
+    /// Whether this version would record no change of intent against `parent`.
+    ///
+    /// A revision must alter a Step or the goal (CMP.DM-R07b). Retirement —
+    /// of the plan or of a step — is a change and is not caught here. The
+    /// Rationale and the author are deliberately *not* compared: a retry whose
+    /// rationale was reworded is precisely the duplicate this rule exists to
+    /// refuse, and no derived value can detect it, because the bodies then
+    /// genuinely differ.
+    pub fn changes_nothing_from(&self, parent: &Version) -> bool {
+        self.steps == parent.steps && self.goal == parent.goal && self.retired == parent.retired
+    }
+
     /// The filename this version is stored under: `<seq>-<hash12>.<ext>`.
     pub fn filename(&self) -> String {
         filename_for(self.seq, &self.hash())
@@ -339,7 +350,6 @@ mod tests {
             seq: 1,
             parents: vec![],
             author: "cos".into(),
-            at: 1,
             why: "Initial plan. Parser rejects nested groups.".into(),
             goal: "Nested groups parse correctly".into(),
             retired: false,
@@ -405,12 +415,76 @@ mod tests {
         assert_ne!(v.hash(), base);
 
         let mut v = sample();
-        v.at = 2;
+        v.author = "someone-else".into();
         assert_ne!(v.hash(), base);
 
         let mut v = sample();
         v.steps[0].work = "Reworded".into();
         assert_ne!(v.hash(), base);
+    }
+
+    /// Decision 0007: no field is excluded from identity, so a name always
+    /// determines the content. The rendered body carries exactly the fields
+    /// the struct carries — in particular there is no `at` to reintroduce.
+    #[test]
+    fn identity_covers_the_whole_body() {
+        let text = sample().render();
+        assert!(
+            !text.lines().any(|l| l.trim_start().starts_with("at =")),
+            "a version records no clock or counter:\n{text}"
+        );
+    }
+
+    /// Two authors making the same revision from the same parent write the
+    /// same bytes, so they converge on one version rather than diverging.
+    /// Identical intent is identical.
+    #[test]
+    fn equal_intent_from_equal_parents_hashes_equally() {
+        let mut a = sample();
+        a.parents = vec!["ab".repeat(32)];
+        a.seq = 2;
+        let b = a.clone();
+        assert_eq!(a.hash(), b.hash());
+    }
+
+    #[test]
+    fn a_revision_altering_neither_step_nor_goal_changes_nothing() {
+        let parent = sample();
+        let mut same = parent.clone();
+        same.why = "Reworded rationale, identical intent.".into();
+        same.author = "another-agent".into();
+        same.seq = parent.seq + 1;
+        same.parents = vec![parent.hash()];
+        assert!(same.changes_nothing_from(&parent));
+    }
+
+    #[test]
+    fn altering_a_step_a_goal_or_retirement_is_a_change() {
+        let parent = sample();
+
+        let mut edited = parent.clone();
+        edited.steps[0].work = "Reproduce with two failing tests".into();
+        assert!(!edited.changes_nothing_from(&parent));
+
+        let mut regoaled = parent.clone();
+        regoaled.goal = "Nested groups parse, and so do quantifiers".into();
+        assert!(!regoaled.changes_nothing_from(&parent));
+
+        let mut retired_plan = parent.clone();
+        retired_plan.retired = true;
+        assert!(!retired_plan.changes_nothing_from(&parent));
+
+        let mut retired_step = parent.clone();
+        retired_step.steps[0].retired = true;
+        assert!(!retired_step.changes_nothing_from(&parent));
+
+        let mut added = parent.clone();
+        added.steps.push(Step::new(
+            "st_C000000003",
+            "Third",
+            pred("test(status=pass)").unwrap(),
+        ));
+        assert!(!added.changes_nothing_from(&parent));
     }
 
     #[test]
@@ -441,7 +515,7 @@ mod tests {
 
     #[test]
     fn requires_each_mandatory_field() {
-        for field in ["plan", "seq", "author", "at", "goal"] {
+        for field in ["plan", "seq", "author", "goal"] {
             let v = sample();
             let text: String = v
                 .render()

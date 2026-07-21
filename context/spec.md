@@ -70,7 +70,7 @@ unresolved (DQ02); the shape is not.
 **1 — created.**
 
 ```kdl
-plan "pl_7Kq2" author="cos" at=1 {
+plan "pl_7Kq2" author="cos" {
   why "Initial plan. Parser rejects nested groups; needed before the release
        branch cuts."
   goal "Nested groups parse correctly"
@@ -95,8 +95,8 @@ not change. This is the property a byte-addressed history cannot provide.
 **3 — diverged.** Two machines revise before replication catches up.
 
 ```text
-003-a1b2…  author="cos"  at=3  why "Adding a fuzz step; one case is not enough."
-003-c3d4…  author="dev"  at=3  why "Splitting the fix: tokenizer, then grammar
+003-a1b2…  author="cos"  why "Adding a fuzz step; one case is not enough."
+003-c3d4…  author="dev"  why "Splitting the fix: tokenizer, then grammar
                                     guard, so each lands reviewable."
 ```
 

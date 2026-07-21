@@ -301,7 +301,6 @@ mod tests {
 plan = pl_7Kq2
 seq = 1
 author = cos
-at = 1
 why = Initial plan. Parser rejects nested groups.
 goal = Nested groups parse correctly
 

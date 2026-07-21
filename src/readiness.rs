@@ -71,7 +71,6 @@ pub struct HeadReadiness {
     pub head: String,
     pub seq: u64,
     pub author: String,
-    pub at: u64,
     /// A head member can be a head member only because its parent has not
     /// arrived. Its readiness answer is provisional and says so.
     pub orphan: bool,
@@ -234,7 +233,6 @@ pub fn for_head(store: &PlanStore, head: &Admitted, orphan: bool) -> HeadReadine
         head: head.hash.clone(),
         seq: version.seq,
         author: version.author.clone(),
-        at: version.at,
         orphan,
         steps,
     }
@@ -291,7 +289,6 @@ mod tests {
             seq: 1,
             parents: vec![],
             author: "cos".into(),
-            at: 1,
             why: "Initial plan.".into(),
             goal: "Nested groups parse".into(),
             retired: false,
@@ -550,13 +547,11 @@ mod tests {
 
         let mut left = base.clone();
         left.seq = 2;
-        left.at = 2;
         left.why = "cos side".into();
         left.parents = vec![admit(base.clone()).hash];
 
         let mut right = base.clone();
         right.seq = 2;
-        right.at = 2;
         right.why = "dev side".into();
         right.author = "dev".into();
         right.parents = vec![admit(base.clone()).hash];

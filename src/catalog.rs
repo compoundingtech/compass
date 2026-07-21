@@ -71,16 +71,6 @@ impl PlanStore {
         Some(first)
     }
 
-    /// Next logical time for a new version (CMP-R09): max seen + 1.
-    pub fn next_at(&self) -> u64 {
-        self.versions
-            .iter()
-            .map(|a| a.version.at)
-            .max()
-            .unwrap_or(0)
-            + 1
-    }
-
     /// Next logical time for a new event.
     pub fn next_event_at(&self) -> u64 {
         self.events.iter().map(|e| e.at).max().unwrap_or(0) + 1
@@ -208,9 +198,11 @@ pub fn load_plan(root: &Path, plan: &str) -> Result<PlanStore, String> {
         }
     }
 
-    store.versions.sort_by(|a, b| {
-        (a.version.seq, a.version.at, &a.hash).cmp(&(b.version.seq, b.version.at, &b.hash))
-    });
+    // Lineage depth first, then hash: a total order that needs no recorded
+    // counter, and that two machines holding the same versions agree on.
+    store
+        .versions
+        .sort_by(|a, b| (a.version.seq, &a.hash).cmp(&(b.version.seq, &b.hash)));
     store
         .events
         .sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
@@ -276,8 +268,9 @@ pub fn admit_version(path: &Path, expected_plan: &str) -> Result<Admitted, Strin
 /// Write a Plan Version. Returns its path and whether it was newly created.
 ///
 /// A version whose file already exists is left alone: the name is the content
-/// hash, so an identical file is the same version. That gives content-address
-/// idempotency; caller-supplied idempotency keys remain open (DQ01).
+/// hash, so an identical file is the same version. Since no field is excluded
+/// from that hash (decision 0007), this is the whole of Compass's idempotency:
+/// there is no caller-supplied key, and none is wanted (CMP-R10).
 pub fn write_version(root: &Path, v: &Version) -> Result<(PathBuf, bool), String> {
     let dir = versions_dir(root, &v.plan);
     fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -369,7 +362,6 @@ mod tests {
             seq: 1,
             parents: vec![],
             author: "cos".into(),
-            at: 1,
             why: "Initial plan.".into(),
             goal: "Ship it".into(),
             retired: false,
@@ -492,23 +484,73 @@ mod tests {
         assert_eq!(store.rejected.len(), 1);
     }
 
+    /// Two machines that independently make the *same* revision from the same
+    /// parent converge on one version instead of diverging (decision 0007).
+    ///
+    /// Each catalog holds a different amount of unrelated history, which under
+    /// a recorded `max(seen) + 1` counter would have given the two revisions
+    /// different bodies, different names, and a permanent false divergence.
+    /// Nothing is recorded that either machine's local history can influence,
+    /// so the bytes match and replication unions them into one file.
     #[test]
-    fn logical_time_is_max_seen_plus_one() {
-        let s = Scratch::new("lamport");
+    fn the_same_revision_from_the_same_parent_converges() {
+        let left = Scratch::new("converge-left");
+        let right = Scratch::new("converge-right");
         let plan = "pl_8000000000";
-        let mut v1 = a_version(plan);
-        v1.at = 1;
-        write_version(&s.root, &v1).unwrap();
 
-        let mut v2 = a_version(plan);
-        v2.at = 7;
-        v2.seq = 2;
-        v2.parents = vec![v1.hash()];
-        v2.why = "Second".into();
-        write_version(&s.root, &v2).unwrap();
+        let root_version = a_version(plan);
+        write_version(&left.root, &root_version).unwrap();
+        write_version(&right.root, &root_version).unwrap();
 
-        let store = load_plan(&s.root, plan).unwrap();
-        assert_eq!(store.next_at(), 8, "must be max(at) + 1, not count + 1");
+        // The left machine has seen more of the plan's history than the right.
+        let mut unrelated = a_version(plan);
+        unrelated.seq = 2;
+        unrelated.parents = vec![root_version.hash()];
+        unrelated.goal = "An older direction, since abandoned".into();
+        unrelated.why = "History the right machine never saw.".into();
+        write_version(&left.root, &unrelated).unwrap();
+
+        let revision = |base: &Version| {
+            let mut v = base.clone();
+            v.seq = base.seq + 1;
+            v.parents = vec![base.hash()];
+            v.why = "The tokenizer, not the grammar, drops it.".into();
+            v.steps[0].work = "Fix the tokenizer".into();
+            v
+        };
+        let from_left = revision(&root_version);
+        let from_right = revision(&root_version);
+
+        assert_eq!(
+            from_left.hash(),
+            from_right.hash(),
+            "identical intent from an identical parent is one version"
+        );
+
+        write_version(&left.root, &from_left).unwrap();
+        write_version(&right.root, &from_right).unwrap();
+        assert_eq!(
+            from_left.filename(),
+            from_right.filename(),
+            "one name, so replication unions rather than accumulating"
+        );
+
+        // Replicate right's file into left. It is the file left already holds.
+        let (path, created) = write_version(&left.root, &from_right).unwrap();
+        assert!(!created, "the replicated file is the one already present");
+
+        let store = load_plan(&left.root, plan).unwrap();
+        assert!(store.rejected.is_empty(), "{:?}", store.rejected);
+        assert_eq!(
+            store
+                .versions
+                .iter()
+                .filter(|a| a.hash == from_left.hash())
+                .count(),
+            1,
+            "the two machines' revisions are one version, not two: {}",
+            path.display()
+        );
     }
 
     #[test]

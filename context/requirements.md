@@ -80,3 +80,10 @@ for one layer:
 - **CMP-R09 Composition is by reference.** Integrations must exchange opaque
   references, mutations, queries, and receipts. They must not share mutable
   files or mutate Compass state directly.
+
+- **CMP-R10 Prefer derived values to asserted ones.** Where a value could be
+  computed from existing state or supplied by a caller, it must be computed. A
+  value a caller sets is a value a caller can set wrongly, and in an append-only
+  store a wrong value is permanent. This constrains identity, ordering, and
+  deduplication in particular: none of them may rest on something an actor
+  chooses.

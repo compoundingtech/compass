@@ -85,6 +85,72 @@ pub fn truncate(s: &str, max: usize) -> String {
     format!("{}…", keep.trim_end())
 }
 
+/// Wrap text to `width` columns, preserving the author's own line breaks.
+///
+/// Truncation is right for a title in a dense listing, where the reader can
+/// ask for the rest. It is wrong for a Rationale under divergence: that text
+/// is the whole basis on which a reconciliation is decided, and eliding it
+/// hides the reasoning exactly where it is most needed. Wrapping costs lines
+/// and keeps the words.
+pub fn wrap_text(s: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    for para in s.lines() {
+        let mut line = String::new();
+        let mut cols = 0usize;
+        for word in para.split_whitespace() {
+            let w = word.chars().count();
+            if cols > 0 && cols + 1 + w > width {
+                out.push(std::mem::take(&mut line));
+                cols = 0;
+            }
+            if cols > 0 {
+                line.push(' ');
+                cols += 1;
+            }
+            line.push_str(word);
+            cols += w;
+        }
+        // A blank input line is a paragraph break the author wrote; keep it.
+        out.push(line);
+    }
+    out
+}
+
+/// Wrap and indent, ready to append to a report.
+pub fn wrapped_block(s: &str, indent: &str, width: usize) -> String {
+    let mut out = String::new();
+    for l in wrap_text(s, width.saturating_sub(indent.chars().count())) {
+        if l.is_empty() {
+            out.push('\n');
+        } else {
+            out.push_str(&format!("{indent}{}\n", dim(&l)));
+        }
+    }
+    out
+}
+
+/// `n` followed by `noun`, pluralised with a trailing `s` when `n != 1`.
+///
+/// "1 events" reads as a bug in the counter and costs the reader a moment
+/// deciding whether it is one.
+pub fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("{n} {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
+
+/// `n` followed by a noun whose plural is not formed by adding `s`.
+pub fn count_of(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
 /// Short form of a content hash for display. The full hash remains identity.
 pub fn short(hash: &str) -> String {
     hash.chars().take(12).collect()
