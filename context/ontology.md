@@ -63,6 +63,14 @@ incomplete rather than that intent disagreed, and it is repaired by waiting, not
 by reconciling.
 _Avoid_: fork, broken chain, corruption
 
+**Unresolved**:
+A Plan that cannot be evaluated because a module it imports is not present
+locally. Distinct from an Orphan, and more severe: an Orphan can be read, and
+only its lineage is incomplete, whereas an Unresolved Plan cannot be read at all.
+Ordinarily it means replication has not delivered the import yet, and it is
+repaired by waiting; it is permanent if the import was never committed.
+_Avoid_: orphan, broken plan, missing parent
+
 **Reconciliation**:
 A Plan Version naming more than one predecessor, resolving a Divergence by
 stating the reconciled intent and why. It is an ordinary Plan Version in every
