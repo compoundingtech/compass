@@ -47,3 +47,30 @@
 - **CMP.CLI-R08 Identity is reported honestly.** The CLI reports its own version
   and build provenance, so an operator can tell which build produced an output.
   _refines: CMP-R07._
+
+- **CMP.CLI-R09 Never ask for a value that has one valid answer.** If a value
+  can be derived from state the CLI can already reach, the CLI derives it rather
+  than accepting it. A caller naming a Plan must not also be asked for its
+  predecessor, its sequence, its author, or where its draft lives. Every such
+  argument is a chance to supply the one wrong answer, and it is a chance the
+  tool created. _refines: CMP-R10._
+
+- **CMP.CLI-R10 Authoring is a document, not an invocation.** Intent is composed
+  in a draft and committed, never assembled from arguments. A caller names the
+  Plan; everything about *what* is intended lives in the document.
+  _refines: CMP-R02, CMP-R10._
+
+- **CMP.CLI-R11 A rejected commit costs no work.** Validation failure leaves the
+  draft exactly as authored, and says where it is. Under append-only storage a
+  refusal is cheap and lost authoring is not, so nothing that refuses may also
+  destroy. _refines: CMP-R07._
+
+- **CMP.CLI-R12 An unchanged draft is a no-op, not a failure.** Committing a
+  draft that changes nothing reports that plainly and writes nothing. It is the
+  ordinary shape of a retry, and a retry that behaved correctly must not be told
+  it failed. _refines: CMP-R02._
+
+- **CMP.CLI-R13 What a commit would do is inspectable before it happens.** The
+  structural change a draft makes against its predecessors is reportable without
+  committing, since under no-delete replication a commit cannot be walked back.
+  _refines: CMP-R07._

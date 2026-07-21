@@ -13,6 +13,7 @@ for one layer:
 | [03-surface](./03-surface/requirements.md) | the logical query and mutation surface |
 | [04-cli](./04-cli/requirements.md) | the operator surface over that port |
 | [05-integrations](./05-integrations/requirements.md) | contracts Compass consumes rather than defines |
+| [06-evals](./06-evals/requirements.md) | executable scenarios proving the claims above hold |
 
 ## Assumptions
 

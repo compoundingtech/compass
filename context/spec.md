@@ -20,6 +20,7 @@ repetition model are unresolved; see [open-questions.md](./open-questions.md).
 | [03-surface](./03-surface/spec.md) | the sanctioned way to read and change a Plan | the model |
 | [04-cli](./04-cli/spec.md) | the operator interface | the surface |
 | [05-integrations](./05-integrations/spec.md) | contracts Compass consumes: catalog form, replication | the artifacts |
+| [06-evals](./06-evals/spec.md) | executable scenarios that prove the claims | the CLI |
 
 The dependency direction is the point. The model does not know it is stored in
 files; the files do not know a CLI exists. A different realization of the same
