@@ -1,0 +1,11 @@
+[package]
+name = "compass"
+version = "0.0.0"
+edition = "2021"
+description = "Durable planning intent for coding agents"
+license = "MIT"
+
+[dependencies]
+
+[profile.release]
+opt-level = 2
