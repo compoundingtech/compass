@@ -43,7 +43,7 @@ paths, schemas, event envelopes, or storage layouts.
 
 Other systems compose with Compass through opaque references, mutations,
 queries, and receipts. They may record operational facts referencing a
-PlanReceipt, but such facts never become Compass state. Compass exposes no
+Receipt, but such facts never become Compass state. Compass exposes no
 subcommand inside another tool's CLI namespace; a facade would make the
 namespace imply authority.
 

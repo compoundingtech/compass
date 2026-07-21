@@ -90,12 +90,12 @@ completion, evidence. Progress Events never alter structural intent and never
 create a Plan Version.
 _Avoid_: status field, state column, mutable progress
 
-**PlanPort**:
-The transport-neutral boundary for Compass queries and mutations. It applies a
-mutation and returns a stable PlanReceipt. What makes a repeated mutation the
-*same* mutation — and therefore whether application is exactly-once — is
-unresolved; see DQ01.
-_Avoid_: event emitter, shared-files adapter
+**Plan Surface**:
+The transport-neutral boundary for Compass queries and mutations, and the only
+sanctioned way to change a Plan. It applies a mutation and returns a stable
+Receipt. What makes a repeated mutation the *same* mutation — and therefore
+whether application is exactly-once — is unresolved; see DQ01.
+_Avoid_: port, API, event emitter, shared-files adapter
 
 **Convergence**:
 Whether the local catalog has received everything its peers have sent. It is a
@@ -111,13 +111,13 @@ which dependencies and gates are unsatisfied. An answer without its explanation
 is not Readiness.
 _Avoid_: queue, backlog, todo list, next action
 
-**PlanReceipt**:
+**Receipt**:
 The stable result of an accepted mutation, bound to its affected opaque
 references and resulting Plan Version.
 _Avoid_: log acknowledgement, observation id
 
 **Observation**:
 An operational fact emitted by a surrounding system after a Compass mutation
-succeeds. It may reference a PlanReceipt, PlanRef, or StepRef, but never becomes
+succeeds. It may reference a Receipt, PlanRef, or StepRef, but never becomes
 Compass state.
 _Avoid_: progress authority, completion record
