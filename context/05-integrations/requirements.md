@@ -17,10 +17,18 @@
 ## Requirements
 
 - **CMP.INT-R01 Adopt the catalog form, do not restate it.** Content-based
-  discovery, path segments supplying defaults with content winning, and
-  retirement as an authored flag are conventions Compass follows. It must not
-  publish a competing definition of them.
+  discovery, path segments supplying defaults, and retirement as an authored
+  flag are conventions Compass follows. It must not publish a competing
+  definition of them.
   _refines: CMP-R06, CMP-R08._
+
+- **CMP.INT-R01a Identity is not a default.** The borrowed convention that
+  content wins over path applies to values a path may supply when content omits
+  them. It does not extend to identity: a file whose content disagrees with the
+  location or name that identify it is rejected, not reinterpreted. Compass
+  diverges from the convention here deliberately, because under no-delete
+  replication a misfiled file cannot be removed once admitted.
+  _refines: CMP-R07._
 
 - **CMP.INT-R02 Define only the document.** What a version and a progress record
   contain — lineage, identity, the required Rationale, the field set — is

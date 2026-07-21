@@ -29,6 +29,19 @@
   Rationale. Nothing reconciles automatically, and a reconciliation may itself
   diverge. _refines: CMP-R03, CMP-R04._
 
+- **CMP.DM-R05a Open divergence is distinguishable from settled.** A divergence
+  is open until its sides share a descendant. Because a divergence is a
+  permanent feature of the lineage, a system that cannot tell open from settled
+  reports every past disagreement as outstanding forever — and a report that is
+  always on carries no information. Only open divergence may prompt action.
+  _refines: CMP-R04._
+
+- **CMP.DM-R05b Retirement may strand dependents.** Retiring a Step that others
+  depend on leaves them permanently unsatisfiable, because a retired Step never
+  becomes accepted. This is a consequence of retirement, not a defect, but it
+  must be visible at the moment of retirement rather than discovered later
+  through readiness that never advances. _refines: CMP-R01._
+
 - **CMP.DM-R06 An absent predecessor is not divergence.** A version whose
   predecessor is unknown must be distinguished from one that disagrees. The
   first ordinarily means state is still arriving; treating it as the second
@@ -60,6 +73,13 @@
 - **CMP.DM-R11 Progress is append-only.** Progress records never alter intent
   and never create a version. Correction is a further record, never an edit.
   _refines: CMP-R02._
+
+- **CMP.DM-R11a Progress names one version, deterministically.** A record cites
+  the version it was observed against. Under divergence there may be several
+  head members carrying the same Step, so the choice must be deterministic and
+  disclosed rather than arbitrary. A record whose cited version differs between
+  two machines observing identical state would make progress itself a source of
+  divergence. _refines: CMP-R04._
 
 - **CMP.DM-R12 Acceptance is evaluable.** A Step's acceptance criterion is
   expressible in a form Compass can evaluate against recorded evidence. Prose

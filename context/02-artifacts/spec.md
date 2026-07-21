@@ -88,8 +88,14 @@ unwritten.
 
 ## Discovery
 
-The catalog is walked and files are admitted per the rules above. Path segments
-may supply defaults; content wins on disagreement.
+The catalog is walked and files are admitted per the rules above.
+
+Path segments may supply values the content omits. They do not override
+identity: where content and location disagree about *which* Plan a version
+belongs to, or where content disagrees with the hash in its name, the file is
+rejected rather than reinterpreted. The borrowed catalog convention resolves
+such disagreements in favour of content; Compass departs from it here, because
+a misfiled file admitted under no-delete replication is permanent.
 
 Discovery parses every candidate file to classify it, which bounds catalog size
 to what can be scanned in interactive time (CMP-A03). The threshold is

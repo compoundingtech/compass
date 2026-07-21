@@ -40,6 +40,14 @@ _Avoid_: current pointer, HEAD file, latest symlink
 Two or more Plan Versions sharing the same predecessor — the observable result
 of concurrent revision on different machines. Divergence is a legitimate state,
 not an error: both versions survive replication and both are visible.
+
+A Divergence is **open** while its sides have no common descendant, and
+**settled** once a Reconciliation descends from all of them. The distinction is
+load-bearing rather than cosmetic: a Divergence is a permanent fact of the
+lineage and can never be removed, so a tool that does not distinguish the two
+reports every historical disagreement as an outstanding problem forever, and
+operators learn to ignore the report. Only an open Divergence asks anything of
+anyone.
 _Avoid_: conflict, collision, fork
 
 **Orphan**:
