@@ -20,12 +20,12 @@ decision 0001 forbids. The split also makes acceptance ambiguous: an external
 observation would be able to complete a Step that the Plan's own acceptance
 criteria have not judged complete.
 
-There is also direct evidence from the surrounding system. Session progress,
-handoff notes, and evidence were previously kept in a separate work-log surface
-alongside plans. Every meaningful unit of work then straddled two domains, and
-"all work has a plan" became unenforceable because work could exist entirely in
-the log. Consolidating them was already the accepted direction there before
-Compass existed; Compass is where it becomes true.
+The failure is observable wherever the two are kept apart. When session
+progress, handoff notes, and evidence live in a work-log beside the plan, every
+meaningful unit of work straddles two domains, and "all work has a plan" becomes
+unenforceable — because work can exist entirely in the log, referenced by no
+plan, and nothing detects it. The log then accumulates the work that matters
+least to reconstruct and the plan loses the work that matters most.
 
 The two layers remain distinct in regime — versions are immutable and
 structural, events are append-only and operational — so owning both does not

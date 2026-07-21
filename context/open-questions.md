@@ -8,49 +8,58 @@ this?", and is what makes divergence visible under union replication. Using only
 keys loses corruption-evidence as a first-class property; using only content
 addresses means a reworded retry writes a spurious version.
 
-The likely resolution is both at different layers — hash for version identity,
-key for mutation dedup, with the receipt binding one to the other — but this is
-unproven and the added surface may not earn its keep. Until it settles, the
-ontology does not claim exactly-once application.
+Both at different layers — hash for version identity, key for mutation dedup,
+with the receipt binding one to the other — is plausible but unproven, and the
+added surface may not earn its keep. Until it resolves, the ontology does not
+claim exactly-once application.
 
-Blocked on: a prototype. The state space is small enough to enumerate —
-retry, reworded retry, conflicting reuse, concurrent divergence,
-divergence-then-retry — so an invariant oracle over a portable model can settle
-it before any storage code exists.
+Settled by exhausting a small state space: retry, reworded retry, conflicting
+key reuse, concurrent divergence, divergence followed by retry, and arrival of a
+version whose predecessor is absent. Each has an observable right answer, so the
+question is decidable without usage evidence.
 
 **DQ02 — What is the serialization syntax?**
-KDL is the working assumption for versions, following the agent-spec precedent:
-it reads well for authored declarative documents with nested blocks. Progress
-Events are assumed JSON, since they are machine-written and never hand-edited.
+A declarative block syntax suits authored versions, which humans read and
+occasionally write. Progress events are machine-written and never hand-edited,
+so they have different constraints and need not share a format.
 
 Unresolved: whether accepting multiple input formats is worth the parsing
-surface for files written almost exclusively by a CLI, and whether the hash is
-taken over raw bytes or a canonical form. Raw bytes are simpler and stricter; a
-canonical form survives reformatting but requires the canonicalization itself to
-be specified and stable forever.
+surface for files written almost exclusively by a CLI, and whether the content
+hash is taken over raw bytes or a canonical form. Raw bytes are simpler and
+stricter; a canonical form survives reformatting, but requires the
+canonicalization to be specified and then stable permanently, since changing it
+invalidates every hash ever written.
 
 **DQ03 — What vocabulary expresses acceptance?**
-Decision 0006 requires acceptance to be machine-checkable, which settles that it
-cannot be prose. It does not settle what the predicate language is: how evidence
-is named and matched, whether predicates compose, whether they can reference
-other Steps, and how a predicate that can never be satisfied is detected. This
-must land before v1 and is the largest remaining design task.
+Decision 0006 establishes that acceptance is machine-checkable, which rules out
+prose. It does not establish the predicate language: how evidence is named and
+matched, whether predicates compose, whether one may reference another Step, and
+how a predicate that can never be satisfied is detected.
+
+Constrained by CMP-R12: readiness must explain itself, so a predicate that
+cannot report why it failed is unusable regardless of expressive power. This is
+the largest open question in the model, and the contract is incomplete without
+it.
 
 **DQ04 — How are references minted without collision?**
-CMP-R07 requires refs that two machines can mint concurrently without colliding
-and without a coordinator. Random identifiers of sufficient width are the
-obvious answer; whether to encode the minting host, and how wide is sufficient
-given the catalog is walked and refs appear in prose, is unresolved.
+CMP-R07 requires references two machines can mint concurrently without a
+coordinator. Random identifiers of sufficient width are the obvious answer.
+Unresolved: how wide is sufficient given references appear in authored prose and
+are read aloud, and whether encoding the minting host is worth the loss of
+opacity.
 
-**DQ05 — How are Plans scoped and discovered?**
+**DQ05 — What is a Plan scoped to?**
 The catalog is a single tree replicating across machines. Unresolved: whether a
 Plan declares an owning workspace, whether agents filter by host as the agent
-catalog does, and what "my plans" means when plans outlive the worktree they
-started in.
+catalog does, and what "my plans" means for a Plan that outlives the worktree it
+began in.
 
-**DQ06 — When does the catalog need an index?**
-CMP-A03 assumes the catalog is walkable in interactive time. Discovery currently
-parses every file to identify it, and the progress layer grows without bound.
-The threshold at which this stops holding is unmeasured, and the ontology
-currently discourages an index. Measuring it is a prerequisite to designing
-compaction, since both answer the same underlying problem.
+**DQ06 — When does the catalog require an index?**
+CMP-A03 assumes a catalog is walkable in interactive time, while discovery
+parses every file to identify it and the progress layer grows without bound. The
+threshold where that assumption fails is unmeasured.
+
+It shares a root with compaction: both are responses to unbounded growth, and a
+solution to either constrains the other. An index also sits uneasily with a
+model whose authority is the files themselves, so its authority would have to be
+derived and rebuildable.

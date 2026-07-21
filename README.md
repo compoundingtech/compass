@@ -72,7 +72,7 @@ creation, revision, divergence across two machines, and reconciliation — with
 the four rationales visible in sequence. That example is the product; the rest
 of the design exists to make it durable.
 
-## Not in v1
+## Outside the contract
 
 **Contention** — two agents claiming the same step is unhandled. Divergence
 covers concurrent *revision*; concurrent *execution* is a different problem.

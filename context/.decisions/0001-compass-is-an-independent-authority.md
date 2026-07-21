@@ -15,12 +15,13 @@ one moment when the boundary is free.
 
 ## Evidence and Argument
 
-An earlier in-house implementation placed plan state inside a coordination bus's
-per-agent directory tree and derived plan lifecycle by folding that bus's event
-log. It worked, but it made the plan's identity, storage path, and lifecycle
-semantics dependent on a tool that owns messaging, not planning. Every later
-question — where do plans live, how do they replicate, what happens when the bus
-changes shape — inherited that coupling.
+Consider the shape this takes in practice: plan state placed inside a
+coordination bus's per-agent directory tree, with plan lifecycle derived by
+folding that bus's event log. It works, and it makes the plan's identity,
+storage path, and lifecycle semantics dependent on a tool that owns messaging,
+not planning. Every later question — where plans live, how they replicate, what
+happens when the bus changes shape — inherits that coupling, and none of them
+can be answered on planning's own terms.
 
 Defining opaque references, an idempotent port, and stable receipts before the
 first authoritative write costs boundary work now and avoids an identity

@@ -6,8 +6,8 @@ Realizes [requirements.md](./requirements.md). Terms are defined in
 
 ## Status
 
-Draft. The logical contract is normative. Serialization syntax, CLI spelling,
-and the idempotency model are open where noted.
+The logical contract is normative. Serialization syntax, CLI spelling, and the
+idempotency model are unresolved; see [open-questions.md](./open-questions.md).
 
 ## Shape
 
@@ -51,8 +51,7 @@ optional `supersedes` naming the StepRef it replaces, and `accept`.
 
 `accept` is machine-checkable: a predicate over recorded evidence, not prose.
 Prose may accompany it, but Readiness must be computable without a judge, and
-prose cannot be folded. The predicate vocabulary is unspecified here and must
-land before v1.
+prose cannot be folded. The predicate vocabulary is unresolved (DQ03).
 
 ### Identity
 

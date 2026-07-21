@@ -71,14 +71,15 @@ version.
 - Nothing is ever silently overwritten, including across machines.
 - Readers must walk the chain; `compass verify` validates it and reports breaks.
 - Long-lived plans accumulate versions and events without bound. Compaction is
-  deferred (see roadmap) rather than designed speculatively.
+  outside this decision; see [0003](./0003-storage-is-a-catalog-replicated-by-an-external-union-sync.md)
+  Amendment 3 for the constraint that shapes it.
 - Tamper-evidence is a property of the chain, not of file permissions.
 
 ## Amendment 1 — the concurrency claim was overstated
 
 The Evidence section above claims the derived head makes replication safe, and
-that "the concurrency safety is not an added mechanism." Adversarial review
-showed this is a trade presented as a dominance. Two corrections:
+that "the concurrency safety is not an added mechanism." That is a trade
+presented as a dominance. Two corrections:
 
 **Removing the head also removes the only completeness signal.** Nothing in the
 catalog states how many versions a plan should have. A reader that has received

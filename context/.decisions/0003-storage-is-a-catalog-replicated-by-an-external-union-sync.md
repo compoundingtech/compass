@@ -110,15 +110,14 @@ was simply shorter: the failure is silent and permanent.
 An assumption this critical must be checkable. Corrected by CMP-R18 and
 CMP.INT-R07.
 
-## Amendment 3 — compaction is foreclosed here, not merely deferred
+## Amendment 3 — this decision constrains compaction
 
-The roadmap defers compaction as future work. This decision makes the obvious
-implementation unavailable: under no-delete replication, deleted files return on
-the next sync. Compaction therefore cannot reclaim anything by removal, and a
-tombstone that readers honour still leaves the files on disk and in the scan
-path — which is the actual cost, since discovery parses every file to identify
-it.
+Compaction is often treated as an independent concern. It is not: this decision
+makes its obvious implementation unavailable. Under no-delete replication,
+deleted files return on the next sync, so compaction cannot reclaim anything by
+removal. A tombstone that readers honour still leaves files on disk and in the
+scan path, which is the actual cost, since discovery parses every file to
+identify it.
 
-Recorded honestly as CMP-T03: growth is unbounded until compaction is
-*designed*, and designing it is constrained by this decision rather than
-independent of it.
+Recorded as CMP-T03: growth is unbounded until compaction is *designed*, and
+its design is constrained here rather than free.
