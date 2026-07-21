@@ -13,35 +13,48 @@ edited; it is revised, which produces a new Plan Version.
 _Avoid_: ticket, issue, epic, backlog, board
 
 **Plan Version**:
-An immutable, content-addressed snapshot of a Plan's structural intent. Every
-Plan Version carries a Rationale and the content hash of its predecessor,
-forming a chain. Versions are created for structural change to intent, never for
-operational facts.
+An immutable, content-addressed snapshot of a Plan's structural intent. It
+carries a Rationale, its author, a logical time, and the content hash of each
+predecessor — none for the first version, one ordinarily, several when
+reconciling a Divergence. Versions are created for structural change to intent,
+never for operational facts.
 _Avoid_: revision row, draft, resourceVersion
 
 **Rationale**:
-The required prose on every Plan Version explaining why intent changed. It is
-the durable planning record: the artifact is the plan, the value is the
-Rationale chain.
-_Avoid_: changelog entry, commit message, note
+The required statement on every Plan Version explaining why intent changed. It
+is the durable planning record: the artifact is the plan, the value is the
+Rationale chain. It is close kin to a commit message, and differs in one
+respect that matters — it is attached to a document whose Steps have identity,
+so a reason can be tied to a unit of work rather than to a range of bytes.
+_Avoid_: changelog entry, status note
 
 **Head**:
-The current Plan Version of a Plan, derived by walking the chain. Head is
-computed, never stored, so there is no mutable file for concurrent writers to
-contend on.
+The frontier of a Plan: the set of Plan Versions with no successor, derived by
+walking the chain. Ordinarily this set has one member and Head reads as "the
+current version." When a Plan has diverged it has several, and every query
+defined over Head must have a meaning for that case. Head is computed, never
+stored.
 _Avoid_: current pointer, HEAD file, latest symlink
 
-**Fork**:
+**Divergence**:
 Two or more Plan Versions sharing the same predecessor — the observable result
-of concurrent revision on different machines. A Fork is a legitimate state, not
-an error: both versions survive replication and both are visible.
-_Avoid_: conflict, collision, divergence error
+of concurrent revision on different machines. Divergence is a legitimate state,
+not an error: both versions survive replication and both are visible.
+_Avoid_: conflict, collision, fork
 
-**Merge Version**:
-A Plan Version naming more than one predecessor, resolving a Fork by stating the
-reconciled intent and why. It is an ordinary Plan Version in every other
-respect.
-_Avoid_: rebase, conflict resolution, fixup
+**Orphan**:
+A Plan Version whose predecessor is not present locally. Distinct from
+Divergence, which it superficially resembles: divergent versions share a
+predecessor, an orphan is missing one. An orphan ordinarily means replication is
+incomplete rather than that intent disagreed, and it is repaired by waiting, not
+by reconciling.
+_Avoid_: fork, broken chain, corruption
+
+**Reconciliation**:
+A Plan Version naming more than one predecessor, resolving a Divergence by
+stating the reconciled intent and why. It is an ordinary Plan Version in every
+other respect, and is itself capable of diverging.
+_Avoid_: rebase, conflict resolution, merge commit, fixup
 
 **Step**:
 A stable unit of intended work within a Plan, carrying dependencies, acceptance
@@ -79,8 +92,24 @@ _Avoid_: status field, state column, mutable progress
 
 **PlanPort**:
 The transport-neutral boundary for Compass queries and mutations. It applies a
-mutation exactly once and returns a stable PlanReceipt.
+mutation and returns a stable PlanReceipt. What makes a repeated mutation the
+*same* mutation — and therefore whether application is exactly-once — is
+unresolved; see DQ01.
 _Avoid_: event emitter, shared-files adapter
+
+**Convergence**:
+Whether the local catalog has received everything its peers have sent. It is a
+property of the replication substrate, not of the catalog: no file states how
+many versions a Plan should have, so completeness cannot be read from the data.
+A query answered before convergence may be answered from stale intent.
+_Avoid_: sync status, freshness, consistency
+
+**Readiness**:
+The Plan-derived answer to what work is available now, computed from the Step
+graph at Head, accepted progress, and gates, together with an explanation of
+which dependencies and gates are unsatisfied. An answer without its explanation
+is not Readiness.
+_Avoid_: queue, backlog, todo list, next action
 
 **PlanReceipt**:
 The stable result of an accepted mutation, bound to its affected opaque

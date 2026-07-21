@@ -73,3 +73,62 @@ version.
 - Long-lived plans accumulate versions and events without bound. Compaction is
   deferred (see roadmap) rather than designed speculatively.
 - Tamper-evidence is a property of the chain, not of file permissions.
+
+## Amendment 1 — the concurrency claim was overstated
+
+The Evidence section above claims the derived head makes replication safe, and
+that "the concurrency safety is not an added mechanism." Adversarial review
+showed this is a trade presented as a dominance. Two corrections:
+
+**Removing the head also removes the only completeness signal.** Nothing in the
+catalog states how many versions a plan should have. A reader that has received
+versions 1, 2, and 4 — replication gives no ordering guarantee — either resolves
+head to 2, serving superseded intent as authoritative with no indication, or
+reports `{2, 4}` as divergence, which it is not: those versions do not share a
+predecessor. A stored head would have made this detectable ("head names 4, its
+parent is absent, wait"). The property was real; the claim that it dominated was
+not. This is why convergence must come from the replication substrate
+(CMP-R17), not from the chain.
+
+**There is no compare-and-swap, so reconciliation can itself diverge.** The
+comparison to distributed version control was misapplied: that system's safety
+comes from an atomic reference update at the remote — precisely the mutable cell
+this decision removes — not from content addressing. Without a serialization
+point, two machines observing the same divergence can each author a
+reconciliation with the same predecessors and different bytes, producing fresh
+divergence at the next position, and again after that. Convergence is not
+guaranteed by this design; it is achieved by an operator noticing.
+
+Both corrections are accepted as the cost of CMP-T01 (availability over
+consistency). The mechanism stands; the argument for it was wrong.
+
+## Amendment 2 — the options table was stacked
+
+Two rows were misstated, and one was missing.
+
+The "mutable plan file, history via version control" row was dismissed with
+"loses stated rationale." That is false — commit messages *are* stated
+rationale, as this decision's own Context concedes. The honest objection is
+narrower: a commit message describes a change to a file, and cannot address a
+step whose identity survives rewording, because that system addresses bytes and
+has no stable sub-document identity.
+
+The absent row is **an immutable versioned plan document inside a version
+control repository** — which would take most of this decision's benefits, and
+adds a genuine compare-and-swap on push. It loses on three grounds, none of them
+about rationale: a plan is bound to a repository and a checkout, so it cannot
+span repositories or outlive a worktree; a rejected push makes a local write
+*fail*, which contradicts CMP-T01; and the machinery is far larger than an
+append-only file set requires.
+
+That row belonged in the table when it was written. Its absence made the chosen
+option look better than it was.
+
+## Amendment 3 — versions must carry author and logical time
+
+The field set omitted both, while this decision claims the history is
+"attributable." It was not. Reconciling divergence begins with who wrote each
+side and in what order, and the catalog could answer neither — offering strictly
+less than the version-control history this decision declines to use. Corrected
+by CMP-R09.
+

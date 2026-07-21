@@ -72,3 +72,53 @@ Decommissioning is the `retired` flag. Files are never deleted.
   is a projection, not a change of authority.
 - Authored content must use environment-variable references rather than absolute
   paths, or the Catalog stops being machine-agnostic.
+
+## Amendment 1 — a version-control repository as the catalog was never considered
+
+The options table found room for a version-controlled SQL database but omitted
+the simplest alternative: **a standalone version control repository as the
+catalog.** That row defeats both objections raised against the per-repository
+option — a dedicated repository is bound to no project and outlives every
+worktree — and supplies history, review, signing, and replication without a
+separate sync mechanism. Its absence, next to a heavier database option, made
+the chosen option look uncontested.
+
+Stated properly, the choice is availability against consistency.
+
+A version control repository serializes: the push is a compare-and-swap, so
+concurrent writers are *rejected* rather than diverging, and a clone is complete
+or absent rather than partially arrived. That directly answers both problems
+recorded in 0002 Amendment 1. The cost is that a local write can fail. An agent
+mid-revision must then reconcile before its work is durable, and the failure
+arrives at exactly the moment the agent is least able to handle it.
+
+The union sync takes the opposite side: a local write always succeeds and
+converges afterwards, at the price of hand-resolved divergence and a
+convergence signal that must be obtained from the substrate rather than the
+data. That is the trade this decision makes, recorded as CMP-T01.
+
+Both are defensible. Only one was written down.
+
+## Amendment 2 — the replication assumption must be verified, not assumed
+
+This decision states that union replication is correct precisely because 0002
+removed every mutable cell. True — and it makes an external, unenforced
+guarantee load-bearing for correctness. A sync configured to propagate deletes
+removes history mid-chain, and the result is indistinguishable from a plan that
+was simply shorter: the failure is silent and permanent.
+
+An assumption this critical must be checkable. Corrected by CMP-R18 and
+CMP.INT-R07.
+
+## Amendment 3 — compaction is foreclosed here, not merely deferred
+
+The roadmap defers compaction as future work. This decision makes the obvious
+implementation unavailable: under no-delete replication, deleted files return on
+the next sync. Compaction therefore cannot reclaim anything by removal, and a
+tombstone that readers honour still leaves the files on disk and in the scan
+path — which is the actual cost, since discovery parses every file to identify
+it.
+
+Recorded honestly as CMP-T03: growth is unbounded until compaction is
+*designed*, and designing it is constrained by this decision rather than
+independent of it.

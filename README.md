@@ -4,34 +4,45 @@ Durable planning intent for coding agents.
 
 **A plan is immutable. Planning is continuous.**
 
-Compass stores plans as a chain of immutable, content-addressed versions. You
-never edit a plan — you revise it, which appends a new version naming its
-predecessor and stating *why* intent changed. The chain of rationales is the
-point: the plan at the tip is disposable, the reasoning that produced it is not.
+Compass stores plans as a chain of immutable versions. You never edit a plan —
+you revise it, which appends a new version naming its predecessor and stating
+*why* intent changed. The plan at the tip is a disposable guess; the chain of
+reasons that produced it is what compounds.
 
-Status: **design**. The contract lives in [`context/`](./context/); a Rust
-implementation follows. Expect it to change.
+Status: **design**. No code yet. The reasoning lives in [`context/`](./context/)
+— three of its load-bearing choices are still open, so treat it as a rationale
+record rather than a contract you could build against today.
 
 ---
 
-## Why not a mutable issue graph
+## "Isn't this just git?"
 
-Graph-based trackers for agents store the current state and let history fall to
-the version control system, if there is one. That stores the disposable half. It
-also forces a hard problem at replication time: two agents editing the same
-mutable row on two machines need real merge machinery to reconcile — the reason
-that class of tool reaches for a version-controlled database with cell-level
-merge.
+It is very nearly git's object model, and the design says so out loud: immutable
+snapshots naming their predecessors by hash, a required message per change,
+divergence as a legitimate state, reconciliation with multiple parents. If you
+are thinking *why not a `plan.md` and good commit messages* — that gets you most
+of this, plus blame, bisect, signing, review, and a UI everyone already has.
 
-Compass has no mutable rows, so the problem does not arise. Both layers are
-append-only and content-addressed, which makes union the *correct* merge rather
-than an approximation. Concurrent revision on two machines produces two versions
-sharing a parent; both survive replication, the divergence is visible as a fork,
-and a merge version resolves it with a stated reason. Nothing is silently
-overwritten, and no database is involved.
+Two things it doesn't get you.
 
-The trade is deliberate: less machinery, and forks you resolve by hand instead
-of merges that resolve themselves.
+**Plans outlive repositories and checkouts.** A plan in git is bound to one
+repository and one worktree. Agent work spans repositories and survives the
+worktree being torn down. The plan has to live somewhere that isn't a project.
+
+**Git addresses bytes, not units of work.** Rename a step and git sees a changed
+line; there is no stable sub-document identity. Compass mints a reference per
+step that survives rewording, so a reason attaches to *a piece of work* rather
+than to a range of characters — and so progress events and readiness can point
+at something that stays put across ten revisions. This is the load-bearing idea,
+and it is the one git structurally cannot provide.
+
+What git gives that Compass gives up: `push` is a compare-and-swap, so
+concurrent writers get rejected instead of diverging, and a clone is complete or
+absent rather than partially arrived. Compass takes the other side — a local
+write always succeeds and converges later — and pays for it in divergence you
+resolve by hand. See
+[decision 0003](./context/.decisions/0003-storage-is-a-catalog-replicated-by-an-external-union-sync.md),
+which records that trade rather than pretending it away.
 
 ## Shape
 
@@ -41,38 +52,37 @@ catalog/plans/<plan>/events/<ts>-<id>.json        append-only
 ```
 
 Structural intent lives in versions. Execution lives in events. Neither creates
-the other.
+the other, and everything else — the current version, readiness, lineage — is
+derived.
 
-There is no head file. The current version is derived by walking the chain — so
-there is no cell for concurrent writers to contend on. That single omission is
-what makes replication safe.
+There is no head file. That removes the cell concurrent writers would contend
+on, and it also removes the only signal that would tell you replication is still
+in flight — so convergence has to come from the sync layer instead. Both halves
+of that are real; [an earlier draft claimed only the first](./context/.decisions/0002-plans-are-immutable-versions-with-a-derived-head.md).
 
-Discovery is content-based: the catalog is walked and files that *are* plan
-versions are processed, whatever their path. Paths use environment-variable
-references rather than absolute paths, so one catalog is valid on machines with
-different layouts. Decommissioning is a `retired` flag, never a deletion —
-under no-delete replication a deleted file simply returns.
+Point a file-sync mechanism with union / newer-wins / no-delete semantics at the
+catalog directory. Without one, Compass runs single-machine and nothing else
+changes. The catalog form follows
+[agent-spec](https://github.com/compoundingtech/agent-spec).
 
-The catalog form follows [agent-spec](https://github.com/compoundingtech/agent-spec).
+## What it looks like
 
-## Replication
-
-Compass replicates nothing itself. Point a file-sync mechanism with union /
-newer-wins / no-delete semantics at the catalog directory. Without one, Compass
-runs single-machine and nothing else changes.
+The [worked example](./context/spec.md#worked-example) walks a plan through
+creation, revision, divergence across two machines, and reconciliation — with
+the four rationales visible in sequence. That example is the product; the rest
+of the design exists to make it durable.
 
 ## Not in v1
 
-**Ready work** — "what can be worked on now" is a pure fold over the step graph
-and accepted progress. It needs no schema change, which is why the substrate
-ships first. It is also the main reason people like graph trackers, so v1
-supersedes their data model before it matches their ergonomics.
+**Contention** — two agents claiming the same step is unhandled. Divergence
+covers concurrent *revision*; concurrent *execution* is a different problem.
 
-**Contention** — two agents claiming the same step is unhandled. Forks cover
-concurrent *revision*; concurrent *execution* is a different problem and v1 does
-not pretend otherwise.
+**Automatic reconciliation** — divergence is resolved by hand, and a
+reconciliation can itself diverge, because there is no serialization point
+anywhere. Convergence is achieved by an operator noticing.
 
-**Compaction** — versions and events accumulate without bound.
+**Compaction** — versions and events accumulate without bound, and no-delete
+replication means removal isn't available as the mechanism.
 
 See [`context/roadmap.md`](./context/roadmap.md).
 
@@ -80,5 +90,15 @@ See [`context/roadmap.md`](./context/roadmap.md).
 
 [Beads](https://github.com/gastownhall/beads) established that agents need a
 dependency-aware work graph rather than a markdown checklist, and that the
-valuable query is "what is ready." Compass takes the graph and the query, and
-disagrees about mutability and about how much machinery replication requires.
+question worth answering is *what is ready*. Compass adopts both, and disagrees
+about mutability and about how much machinery replication requires — Beads
+reconciles concurrent edits with a version-controlled SQL database and
+cell-level merge; Compass has no mutable rows to reconcile, and hands you the
+residual by hand.
+
+That's a different bet, not a proven better one. Beads has 25k stars and a
+working binary; this has neither.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
