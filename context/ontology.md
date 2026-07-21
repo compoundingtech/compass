@@ -8,22 +8,40 @@ _Avoid_: planner, task runner, issue tracker
 
 **Plan**:
 Durable authored intent for one goal: an acceptance contract plus a dependency
-graph of Steps. A Plan is referenced by an opaque `PlanRef`. A Plan is never
-edited; it is revised, which produces a new Plan Version.
+graph of Steps. A Plan is referenced by a `PlanRef`. A Plan is never edited; it
+is revised, which produces a new Plan Version.
 _Avoid_: ticket, issue, epic, backlog, board
 
 **Plan Version**:
-An immutable, content-addressed snapshot of a Plan's structural intent. It
-carries a Rationale, its author, and the content hash of each predecessor — none
-for the first version, one ordinarily, several when reconciling a Divergence.
-Versions are created for structural change to intent, never for operational
-facts, and a version that changes neither a Step nor the goal is refused.
+An immutable snapshot of a Plan's structural intent, authored as a module and
+stored exactly as authored. It carries a Rationale, its author, and imports each
+predecessor — none for the first version, one ordinarily, several when
+reconciling a Divergence. Versions are created for structural change to intent,
+never for operational facts, and a version that changes neither a Step nor the
+goal is refused.
 
-Identity is the hash of the whole body, with nothing excluded, so the name
-always determines the content. Two versions with identical content are one
+Identity is the hash of the version's source bytes, with nothing excluded and
+nothing normalized, so the name always determines the content and any alteration
+of a committed version is visible. Two versions with identical source are one
 version: repeating a mutation therefore cannot repeat its effect, and no
 caller-supplied token is involved.
-_Avoid_: revision row, draft, resourceVersion, logical clock
+_Avoid_: revision row, draft, resourceVersion, logical clock, rendering
+
+**Revision**:
+The act that produces a Plan Version from its predecessor, expressed as a
+function of that predecessor. It may edit a Step, add one, or retire one. It has
+no way to remove one: every Step of the predecessor is carried forward, so
+dropping a Step is not something Compass refuses but something a revision cannot
+say.
+_Avoid_: patch, diff, regeneration, overwrite
+
+**Evaluation**:
+Running a Plan Version, and transitively everything it imports, to obtain what
+the Plan says. Reading is evaluation — there is no second stored form to consult
+instead — so reading a replicated Plan runs code authored on another machine.
+Evaluation holds no capability it was not explicitly given, and is bounded in
+time and memory.
+_Avoid_: parsing, loading, rendering, interpretation
 
 **Rationale**:
 The required statement on every Plan Version explaining why intent changed. It
@@ -83,14 +101,17 @@ criteria, and lifecycle. Referenced by a `StepRef`.
 _Avoid_: task row, checklist item, ephemeral list index
 
 **StepRef**:
-A minted stable opaque reference to a Step. It is minted at Step creation, not
-derived from Step content, so it survives a title or metadata revision while the
-intended work is unchanged. It is never reused after the Step is retired.
-_Avoid_: content hash, array index, title slug
+A Step's identity: the name it is declared under, qualified by its Plan. It is
+authored rather than minted, and is independent of the Step's content, so it
+survives a rewording of the same intended work. It is not opaque — a reader can
+read it — and it is not invented at a use site, because a dependency names the
+declaration rather than spelling a reference. It is never reused after the Step
+is retired, and a Step declared without a name has no identity and is refused.
+_Avoid_: minted id, content hash, array index, title slug, opaque token
 
 **PlanRef**:
-A stable opaque reference to a Plan. It encodes no filesystem, database,
-transport, or host location.
+A stable reference to a Plan. It encodes no filesystem, database, transport, or
+host location. What determines it is unresolved; see DQ04.
 _Avoid_: plan path, catalog path, file name
 
 **Catalog**:
@@ -100,22 +121,33 @@ segments may supply defaults, but content wins.
 _Avoid_: database, index, registry
 
 **Retired**:
-A declared flag marking a Plan or Step as decommissioned. Retirement is always
-an authored edit, never a file deletion, because the Catalog replicates as a
-union with no deletes.
+A declared state marking a Plan or Step as decommissioned. Retirement is always
+authored content carried forward by every later version, never a file deletion
+and never an omission, because the Catalog replicates as a union with no deletes
+and because a revision has no way to omit a Step in the first place.
 _Avoid_: delete, archive, remove
+
+**Index**:
+A machine-local cache holding the evaluated form of a version, keyed by that
+version's content hash. It exists because reading is evaluation and evaluation
+is expensive to repeat. It has no authority: an entry is a memo of a pure
+function over immutable input, so it can be deleted at any time and rebuilt on
+demand, it is never replicated, and there is nothing to invalidate — a changed
+module is a different hash and therefore a different key.
+_Avoid_: database, source of truth, projection, materialized view
 
 **Progress Event**:
 An append-only record of execution against a Step: start, update, handoff,
 completion, evidence. Progress Events never alter structural intent and never
-create a Plan Version.
+create a Plan Version. Unlike a version, a Progress Event is inert data: it is
+read without being evaluated, and nothing in the progress layer executes.
 _Avoid_: status field, state column, mutable progress
 
 **Plan Surface**:
 The transport-neutral boundary for Compass queries and mutations, and the only
 sanctioned way to change a Plan. It applies a mutation and returns a stable
-Receipt. What makes a repeated mutation the *same* mutation — and therefore
-whether application is exactly-once — is unresolved; see DQ01.
+Receipt. A repeated mutation is the same mutation when it carries the same
+authored source, which yields the same identity and therefore one version.
 _Avoid_: port, API, event emitter, shared-files adapter
 
 **Convergence**:
@@ -133,8 +165,8 @@ is not Readiness.
 _Avoid_: queue, backlog, todo list, next action
 
 **Receipt**:
-The stable result of an accepted mutation, bound to its affected opaque
-references and resulting Plan Version.
+The stable result of an accepted mutation, bound to its affected references and
+resulting Plan Version.
 _Avoid_: log acknowledgement, observation id
 
 **Observation**:

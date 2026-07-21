@@ -28,13 +28,16 @@
   which remains valid for later reference. _refines: CMP-R09._
 
 - **CMP.SURF-R05 Failure yields nothing.** A rejected mutation produces no
-  receipt, records no state, and permits no external record claiming success.
-  _refines: CMP-R09._
+  receipt, records no state, permits no external record claiming success, and
+  leaves what the caller authored untouched. Nothing is written back into
+  authored content, so a refusal costs exactly the work of resubmitting.
+  _refines: CMP-R09, CMP-R02._
 
 - **CMP.SURF-R06 Repetition is not duplication.** Submitting the same mutation
-  more than once must not record it more than once. What makes two submissions
-  *the same* is unresolved (DQ01), and until it resolves the surface does not
-  claim exactly-once application. _refines: CMP-R02._
+  more than once records it once. Two submissions are the same when they carry
+  the same authored content, which yields the same identity and therefore one
+  version — a property of the data rather than a protocol both sides must
+  implement correctly. _refines: CMP-R02, CMP-R10._
 
 - **CMP.SURF-R07 Reads report their own reliability.** A query answers with the
   convergence state of what it read, so a caller can distinguish a settled
@@ -45,3 +48,11 @@
   record a fact referencing a Receipt only after the mutation is accepted. Its
   failure never rolls back, blocks, or alters the result.
   _refines: CMP-R09._
+
+- **CMP.SURF-R09 A read distinguishes why it could not answer.** Absent,
+  unresolved, and stopped are three different answers and must not collapse into
+  one. A Plan that is not here, a Plan that cannot be evaluated because what it
+  references has not arrived, and a Plan whose evaluation exceeded its bound
+  each call for a different response — look elsewhere, wait, or stop trusting
+  the Plan — and a caller told only that the read failed will pick among them by
+  guessing. _refines: CMP-R05, CMP-R07, CMP-R13._

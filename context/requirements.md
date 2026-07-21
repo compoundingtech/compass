@@ -9,7 +9,7 @@ for one layer:
 | Node | Owns |
 | --- | --- |
 | [01-data-model](./01-data-model/requirements.md) | what a Plan is, independent of how it is stored |
-| [02-artifacts](./02-artifacts/requirements.md) | one realization of that model as files |
+| [02-artifacts](./02-artifacts/requirements.md) | one realization of that model as stored modules, and the derived index over them |
 | [03-surface](./03-surface/requirements.md) | the logical query and mutation surface |
 | [04-cli](./04-cli/requirements.md) | the operator surface over that port |
 | [05-integrations](./05-integrations/requirements.md) | contracts Compass consumes rather than defines |
@@ -23,10 +23,11 @@ for one layer:
   assumed.
 - **CMP-A02 Concurrent writers are normal.** Several agents on several machines
   revise plans at once. Concurrency is the design centre, not an edge case.
-- **CMP-A03 A catalog is walkable.** The plan set for one operator fits in
-  memory and can be scanned in interactive time. When this stops holding, an
-  index becomes necessary, and that is a change to this assumption rather than
-  an optimization.
+- **CMP-A03 Evaluation is reproducible.** Authored intent evaluates to the same
+  result on every machine and across engine versions. Agreement about what a
+  Plan says — its Steps, their identities, their acceptance — rests on this, so
+  it must be tested rather than assumed, and any widening of what evaluation can
+  reach is a change to this assumption.
 
 ## Acceptable Tradeoffs
 
@@ -35,15 +36,25 @@ for one layer:
   compare-and-swap. The price is real: divergence must be resolved by hand, and
   Compass cannot offer the "your write was rejected, reconcile first" signal
   that a consistent store gives for free.
-- **CMP-T02 Corruption-evidence, not tamper-proofing.** Integrity mechanisms
-  detect accidental and mechanical damage. They do not resist a determined
-  writer, who owns the files and can recompute any derived value. Nothing here
-  is a security boundary.
+- **CMP-T02 Corruption-evidence, not tamper-proofing.** Storage and integrity
+  mechanisms detect accidental and mechanical damage. They do not resist a
+  determined writer, who owns the files and can recompute any derived value. No
+  storage mechanism here is a security boundary. This is a statement about
+  storage only; the environment intent is evaluated in is a correctness boundary
+  and is not covered by this tradeoff (CMP-R12).
 - **CMP-T03 Growth is unbounded until compaction exists.** Under no-delete
   replication, removal is unavailable as a reclamation strategy, so compaction
   must be designed rather than assumed.
 - **CMP-T04 Plan history is not pull-request reviewable.** The catalog is not a
   repository. Review of intent, if wanted, is a projection.
+
+- **CMP-T05 Reading executes code authored elsewhere.** Intent is a program, so
+  reading a Plan evaluates it and everything it imports — including modules that
+  arrived by replication from another machine. This is accepted rather than
+  worked around, because the alternatives cost either the reference model that
+  makes intent authorable or a second artifact per version that can disagree
+  with the first. What makes it acceptable is the evaluation environment
+  (CMP-R12) and the bound on evaluation (CMP-R13), not trust in the peer.
 
 ## Requirements
 
@@ -78,16 +89,26 @@ for one layer:
 - **CMP-R08 No foreign schema dependency.** The Compass core must not depend on
   another tool's paths, storage layouts, event envelopes, or private schemas.
 
-- **CMP-R09 Composition is by reference.** Integrations must exchange opaque
+- **CMP-R09 Composition is by reference.** Integrations must exchange stable
   references, mutations, queries, and receipts. They must not share mutable
-  files or mutate Compass state directly.
+  files or mutate Compass state directly. A reference is stable — it survives
+  revision and names one thing forever — but it is not required to be
+  meaningless: a Step is referenced by the name it was declared under, which a
+  reader can read.
 
 - **CMP-R10 Prefer derived values to asserted ones.** Where a value could be
   computed from existing state or supplied by a caller, it must be computed. A
   value a caller sets is a value a caller can set wrongly, and in an append-only
-  store a wrong value is permanent. This constrains identity, ordering, and
-  deduplication in particular: none of them may rest on something an actor
+  store a wrong value is permanent. This constrains version identity, ordering,
+  and deduplication in particular: none of them may rest on something an actor
   chooses.
+
+  The objection is to values an actor supplies and cannot check, not to values
+  an actor writes deliberately. A name a Step is declared under is authored, but
+  every use of it is checked where it is used, so getting it wrong fails loudly
+  at the point of the mistake. A value with that property is not what this
+  requirement forbids; an opaque token that must be carried correctly by hand
+  is.
 
 - **CMP-R11 Starting a plan must be trivial.** Beginning a plan must cost one
   command and produce something immediately workable, with nothing to import,
@@ -101,3 +122,23 @@ for one layer:
   can matter. Whether it holds is observable — an agent given a small planning
   task either reaches for Compass or does not — so it is testable rather than
   asserted.
+
+- **CMP-R12 Evaluating intent grants no capability.** Reading a Plan runs it, so
+  evaluation must happen in an environment that holds nothing it was not
+  explicitly given — no clock, no filesystem, no network, no source of
+  randomness, nothing platform-dependent. The requirement is that a capability
+  be *absent* rather than removed: a boundary built by taking things away widens
+  silently every time the environment gains something. This is what makes
+  CMP-T05 tolerable, so it is a correctness boundary and not a convenience.
+
+- **CMP-R13 Evaluation is bounded.** Intent that does not terminate, or that
+  allocates without limit, must be stopped and reported rather than allowed to
+  consume the reader. Once reading runs code that arrived from elsewhere,
+  exhaustion is a reachable state rather than a theoretical one, and it is the
+  one failure CMP-R12 does not address.
+
+- **CMP-R14 Derived state carries no authority.** Anything Compass computes and
+  keeps in order to make reading affordable must be discardable at any moment
+  with nothing lost, and must never be consultable as a second account of what a
+  Plan says. Derived state that can become load-bearing is a second source of
+  truth that nobody declared.

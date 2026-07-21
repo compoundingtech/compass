@@ -42,18 +42,20 @@ Assertions are properties, never bytes:
 versions == 3
 heads == 2
 divergence open
-step <captured-ref> present
-step <captured-ref> accepted
-ready contains <captured-ref>
+step reproduce present
+step reproduce accepted
+ready contains reproduce
+read unresolved
+read stopped
 exit == 0
-stderr contains "already carries exactly this intent"
+stderr contains "already committed"
 ```
 
-References are captured from output during the run, never written literally,
-because they are minted from randomness (CMP.EVAL-R08). Content hashes never
-appear in an expectation at all: identity is a hash of the document, so a field
-added anywhere rewrites every hash, and a suite pinned to them would demand
-regeneration on every change until nobody read the diffs.
+Step identities are written literally, because they are the names the scenario
+declared. Content hashes never appear in an expectation at all: identity is a
+hash of a version's source, so any change to that source rewrites every hash,
+and a suite pinned to them would demand regeneration on every change until
+nobody read the diffs.
 
 ## Simulating replication
 
@@ -67,7 +69,9 @@ catalog A ──copy──▶ catalog B     both directions, never removing
 ```
 
 An orphan is produced by copying a subset — a version whose predecessor has not
-arrived yet — which is the real condition rather than a simulation of it.
+arrived yet — which is the real condition rather than a simulation of it. The
+same subset produces an unresolved Plan, and a scenario distinguishes the two by
+what the read returns rather than by how the files were arranged.
 
 ## Coverage
 
@@ -100,16 +104,45 @@ asserted:
 | a hypothesis that dies | the Rationale chain is the artifact — CMP-R03 |
 | two machines, one plan | divergence survives replication — CMP-R04, CMP.DM-R04 |
 | staleness, not disagreement | an orphan is distinguished from divergence — CMP.DM-R06 |
-| the crash-retry | a repeated mutation records once — CMP.DM-R07a, decision 0010 |
+| the crash-retry | a repeated mutation records once — CMP.DM-R07a, CMP.CLI-R12 |
+| the same work, said better | identity survives rewording — CMP.DM-R08 |
+| a step nobody can drop | dropping is unrepresentable — CMP.DM-R07c, CMP.EVAL-R09 |
 | a step is retired | dependents are stranded visibly — CMP.DM-R05b |
+| a committed version, edited | tampering with stored source is detected — CMP.FS-R02b, CMP.FS-R07 |
+| a plan that will not finish | evaluation is stopped, not awaited — CMP-R13, CMP.SURF-R09 |
+| an import that never arrived | unresolved is not absence — CMP.DM-R06a, CMP.INT-R10 |
 | evidence contradicts | acceptance is a current reading, not a latch — CMP.DM-R12 |
-| a claim without standing | predicates bind recorded fields — decision 0008 |
+| a claim without standing | predicates bind recorded fields — CMP.DM-R13b |
+| a word nobody else used | a record that can never match is reported — CMP.DM-R13d |
 | a plan that is not code | the model is domain-neutral |
 | an agent given a small task | starting is trivial — CMP-R11 |
 
+Four of these defend claims that are easy to assert and easy to leave untested.
+
+*The same work, said better* rewords a Step and shows one Step across the
+lineage rather than a retirement and a replacement — the property a
+byte-addressed history cannot provide.
+
+*A step nobody can drop* is not a test that a check fires. It attempts to author
+a revision that omits a Step and finds there is no way to say it: the Step is
+carried forward regardless. What is asserted is the absence of a spelling, which
+is why the scenario reads oddly and why it is worth keeping.
+
+*A committed version, edited* alters a stored version in place and shows the
+alteration surfacing — the identity no longer matches the name, and every later
+version that references it says so. This is the return on making every byte
+identity-bearing, and without a scenario it is only a claim.
+
+*A plan that will not finish* and *an import that never arrived* cover the two
+failures accepted when reading became execution. The first must be stopped and
+reported, and must not be reported as something worth waiting for; the second
+must be reported as unresolved rather than as an empty or absent Plan.
+
 The domain-neutral scenario is deliberate. Nothing in the model mentions code,
 and a suite composed only of engineering scenarios would quietly make that claim
-false by never testing it.
+false by never testing it. It bears restating in a system whose intent is
+written as a program: the *authoring language* is code, and nothing about the
+*work* has to be.
 
 The last scenario is of a different kind and is the only one that cannot be
 asserted mechanically. CMP-R11 claims starting a plan is trivial enough that

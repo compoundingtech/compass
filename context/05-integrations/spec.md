@@ -29,8 +29,8 @@ The declaration covers the catalog directory **recursively and without a path
 filter.**
 
 This is deliberate and load-bearing. Fabric's include-globs match a normalised
-relative path, and `*` does not cross a directory separator — so a filter like
-`*.kdl` matches only files at the top level. Compass's layout nests several
+relative path, and `*` does not cross a directory separator — so a filter naming
+one extension matches only files at the top level. Compass's layout nests several
 levels deep, so such a filter would propagate nothing while the sync reported
 itself healthy. The failure is silent, survives restarts, and looks exactly like
 "no changes to sync." Since the catalog directory is purpose-built and contains
@@ -75,3 +75,49 @@ content-addressed name is checked against the content before the file is
 admitted as a version. Compass does not rely on file modes surviving
 replication, since the sync materialises files under its own semantics. Mode
 `0444` is a local accident-guard, not a property of the wire.
+
+The name check is an integrity check and nothing more. It establishes that a
+file is the file its name claims; it establishes nothing about what that file
+does.
+
+## Received versions are executed
+
+Replication moves modules, and reading a Plan runs them. A version authored on
+another machine is evaluated on this one, transitively, whenever anyone reads
+the Plan that references it.
+
+This is a consequence of intent being code rather than an oversight, and it is
+where the evaluation environment earns its place. A received Plan runs against a
+global the host constructs explicitly: it can compute, and it can reach nothing —
+no clock, no filesystem, no network, no capability that was not deliberately
+introduced. The guarantee is that the capability is *absent*, not that it was
+taken away, which is why it does not weaken as the environment grows.
+
+What that environment does not address is exhaustion, so evaluation is bounded
+in time and memory. Denial of service is the most plausible hostile act once
+foreign code runs on a read, and it is the one the capability boundary has
+nothing to say about.
+
+## An undelivered reference is not an ordinary gap
+
+Replication delivers files in no particular order, so a Plan routinely
+references something that has not arrived. That Plan is **Unresolved**: it
+cannot be evaluated, so it reports no goal, no Steps, and no readiness.
+
+This is more severe than an orphan and is reported as its own condition. An
+orphan has an incomplete lineage and still says what it intends. An unresolved
+Plan says nothing, and the difference matters at exactly the moment an operator
+is deciding whether to wait: waiting is right in both cases, but only one of
+them is showing anything in the meantime, and treating the silent one as the
+partial one invites the conclusion that the Plan is empty.
+
+It is repaired by the next sync, and it is permanent if what it references was
+never committed anywhere.
+
+## What replicates
+
+Committed versions and progress events replicate. Nothing derived does. The
+index Compass keeps to avoid re-evaluating what it has already evaluated is
+machine-local and is not declared to the sync mechanism: it is computable from
+what does replicate, so shipping it would buy nothing and would create a value
+two machines could disagree about.

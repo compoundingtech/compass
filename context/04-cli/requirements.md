@@ -51,26 +51,42 @@
 - **CMP.CLI-R09 Never ask for a value that has one valid answer.** If a value
   can be derived from state the CLI can already reach, the CLI derives it rather
   than accepting it. A caller naming a Plan must not also be asked for its
-  predecessor, its sequence, its author, or where its draft lives. Every such
-  argument is a chance to supply the one wrong answer, and it is a chance the
-  tool created. _refines: CMP-R10._
+  sequence or its file layout. Every such argument is a chance to supply the one
+  wrong answer, and it is a chance the tool created. A revision's predecessor is
+  neither derived nor asked for: it is written in the revision itself, which is
+  what makes a retry repeat rather than drift. _refines: CMP-R10._
 
-- **CMP.CLI-R10 Authoring is a document, not an invocation.** Intent is composed
-  in a draft and committed, never assembled from arguments. A caller names the
-  Plan; everything about *what* is intended lives in the document.
-  _refines: CMP-R02, CMP-R10._
+- **CMP.CLI-R10 Authoring is a module, not an invocation.** Intent is written as
+  code and committed, never assembled from arguments. A caller names what to
+  commit; everything about *what* is intended lives in the module, where a
+  dependency is a reference the language checks rather than a string the CLI
+  accepts. _refines: CMP-R02, CMP-R10._
 
-- **CMP.CLI-R11 A rejected commit costs no work.** Validation failure leaves the
-  draft exactly as authored, and says where it is. Under append-only storage a
-  refusal is cheap and lost authoring is not, so nothing that refuses may also
-  destroy. _refines: CMP-R07._
+- **CMP.CLI-R11 A rejected commit costs no work.** Refusal leaves what was
+  authored exactly as authored, byte for byte, and says where it is. Nothing is
+  ever written back into authored content, so there is no path by which a
+  refusal could modify it — this holds by construction rather than by
+  discipline. _refines: CMP-R07._
 
-- **CMP.CLI-R12 An unchanged draft is a no-op, not a failure.** Committing a
-  draft that changes nothing reports that plainly and writes nothing. It is the
-  ordinary shape of a retry, and a retry that behaved correctly must not be told
-  it failed. _refines: CMP-R02._
+- **CMP.CLI-R12 Committing what already landed is a no-op, not a failure.**
+  Submitting content identical to a version already committed reports what is
+  there and writes nothing. This is the ordinary shape of a retry, and a retry
+  that behaved correctly must not be told it failed. It is distinct from
+  authoring *new* content that changes no Step and no goal, which is refused
+  (CMP.DM-R07b) — the first repeats an act, the second asserts a revision that
+  did not revise. The two must not report alike. _refines: CMP-R02._
 
 - **CMP.CLI-R13 What a commit would do is inspectable before it happens.** The
-  structural change a draft makes against its predecessors is reportable without
-  committing, since under no-delete replication a commit cannot be walked back.
-  _refines: CMP-R07._
+  structural change authored content makes against its predecessors is
+  reportable without committing, since under no-delete replication a commit
+  cannot be walked back. Establishing it means evaluating the content, so this
+  is a read that runs a program and is subject to the same bound as any other.
+  _refines: CMP-R07, CMP-R13._
+
+- **CMP.CLI-R14 A read that could not answer says which kind of failure it was.**
+  A Plan that is absent, one that cannot be evaluated because something it
+  references has not arrived, and one whose evaluation was stopped are rendered
+  distinctly, each naming what is missing or which bound was reached. The
+  operator's next action differs in each case — look elsewhere, wait, or stop
+  trusting the Plan — so a single "could not read" would leave the choice to
+  guesswork. _refines: CMP-R05, CMP-R07._

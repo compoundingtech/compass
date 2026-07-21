@@ -107,7 +107,7 @@ guarantee load-bearing for correctness. A sync configured to propagate deletes
 removes history mid-chain, and the result is indistinguishable from a plan that
 was simply shorter: the failure is silent and permanent.
 
-An assumption this critical must be checkable. Corrected by CMP-R18 and
+An assumption this critical must be checkable. Corrected by CMP-R05 and
 CMP.INT-R07.
 
 ## Amendment 3 — this decision constrains compaction

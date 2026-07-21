@@ -48,6 +48,15 @@
   writes permanent intent to resolve a transient condition.
   _refines: CMP-R04, CMP-R05._
 
+- **CMP.DM-R06a An unreadable Plan is distinguished from an incomplete one.** A
+  Plan that cannot be evaluated because something it references is absent must
+  be reported as unresolved, distinctly from a version whose predecessor is
+  merely missing. The two look alike and are not: an incomplete lineage still
+  answers what the Plan says, while an unresolved Plan answers nothing at all.
+  Reporting the second as the first invites waiting for a repair that has
+  already arrived, or reconciling to paper over an absence.
+  _refines: CMP-R05, CMP-R07._
+
 - **CMP.DM-R07 Versions are attributable.** Each version records its author.
   Reconciling divergence requires knowing who wrote each side. Order is not
   recorded but derived from the lineage: a counter cannot order divergent
@@ -57,29 +66,64 @@
 - **CMP.DM-R07a Repeating a mutation does not repeat its effect.** A mutation
   applied twice produces one version. This must follow from the data — an
   identical mutation yields an identical version, therefore the same identity —
-  rather than from a token a caller supplies and could supply wrongly.
+  rather than from a token a caller supplies and could supply wrongly. It holds
+  only because a revision states its predecessor as part of its own content: a
+  base that were read at the moment of application would have moved by the time
+  a retry arrived, and the retry would differ from the attempt it repeats.
   _refines: CMP-R02, CMP-R10._
 
 - **CMP.DM-R07b A revision must change something.** A version that alters no
   Step and no goal is refused. Without this, a retry whose rationale was
   reworded produces a permanent duplicate that no derived value can detect,
-  because the bodies genuinely differ. The cost is that a deliberate non-change
-  cannot be recorded. _refines: CMP-R02, CMP-R03._
+  because the content genuinely differs. This is distinct from re-applying the
+  identical revision, which is one version by CMP.DM-R07a and is not a failure.
+  The cost is that a deliberate non-change cannot be recorded.
+  _refines: CMP-R02, CMP-R03._
+
+- **CMP.DM-R07c A revision carries its predecessor forward.** A revision is
+  expressed against the version before it and can edit a Step, add one, or
+  retire one. It has no way to remove one. Dropping a Step is therefore not
+  something Compass detects and refuses but something a revision cannot express
+  — which is the stronger property, because a refusal only catches what it was
+  built to look for and a plan that restates itself wholesale gives it a great
+  deal to look for. Removal is retirement, and a retired Step stays in the
+  Plan. _refines: CMP-R02._
 
 ### Identity
 
-- **CMP.DM-R08 References are minted, not derived.** A Plan reference and a Step
-  reference are minted at creation and are independent of content, so revising
-  text preserves identity and a reader can follow one unit of work across the
-  whole lineage. _refines: CMP-R02._
+- **CMP.DM-R08 A Step's identity is the name it is declared under.** Identity is
+  the declared name qualified by its Plan: not minted, not random, and not
+  derived from the Step's content. It is fixed where the Step is first declared
+  and carried forward by revision, so a Step that outlives many versions keeps
+  the identity it was born with, and rewording the work does not disturb it.
+  _refines: CMP-R02, CMP-R10._
 
-- **CMP.DM-R09 References survive concurrent minting.** Two machines minting at
-  the same time, without a coordinator, must not produce the same reference.
-  _refines: CMP-R04._
+- **CMP.DM-R09 A dependency names a declaration, never a spelling.** One Step
+  depending on another must reference the declaration itself, so a dependency
+  cannot be invented, mistyped, or left dangling — a reference that does not
+  resolve fails where it is written. A reference an author types from memory can
+  be plausible and wrong, which is the worst available outcome: it parses,
+  validates, and means something nobody intended. _refines: CMP-R01, CMP-R10._
 
-- **CMP.DM-R10 Retired references are final.** A reference is never reused after
-  retirement, and identity changes — split, merge, replacement — are stated
+- **CMP.DM-R09a An unnamed Step has no identity and is refused.** A Step that is
+  not a named declaration cannot be referenced, carried forward, or retired, so
+  it is rejected rather than admitted with an identity Compass invents for it.
+  This constrains how intent may be written, which is the point.
+  _refines: CMP-R02, CMP-R10._
+
+- **CMP.DM-R10 Retired names are final.** A name is never reused after the Step
+  it identified is retired, because reuse would silently attach one Step's
+  history to another. Identity changes — split, merge, replacement — are stated
   explicitly rather than inherited silently. _refines: CMP-R02._
+
+- **CMP.DM-R10a Re-identification is detectable.** Renaming a declaration in
+  already-committed content changes what that content says about identity, and
+  that change must be visible rather than silent. This holds only while the
+  declared identity is inside what identity is computed over; see
+  [CMP.FS-R02a and CMP.FS-R03](../02-artifacts/requirements.md). It is
+  load-bearing rather than
+  incidental, because without it a committed Step can be re-identified while
+  every hash in the lineage stays constant. _refines: CMP-R02, CMP-R07._
 
 ### Progress and acceptance
 
@@ -114,6 +158,34 @@
   requiring a named approver is satisfiable by anyone willing to write that name
   — an acceptance indistinguishable from a genuine one.
   _refines: CMP-R01, CMP-R10._
+
+- **CMP.DM-R13c The evidence vocabulary is not declared.** Compass fixes the
+  structure of a Plan and fixes nothing about the words used inside an
+  acceptance criterion. It does not define, validate, or adjudicate what a kind
+  of evidence means, because a vocabulary carried inside a version would make
+  widening it mint a new version of every Plan that used it — versions nobody
+  authored, in a system whose central claim is that a version means intent
+  changed. _refines: CMP-R01, CMP-R02._
+
+- **CMP.DM-R13d A record that can never match is reported when it is written.**
+  A criterion naming one spelling and a record naming another leaves the
+  criterion valid and permanently unsatisfiable, and readiness then reports the
+  Step as waiting forever, indistinguishably from work that is simply not done.
+  A record must therefore be checked, as it is written, against the criteria it
+  could contribute to, and a value outside the domain those criteria establish
+  reported with the criterion it most likely intended. This reports and never
+  refuses: the domain is derived from what the Plan's own criteria mention, so
+  it is necessarily incomplete, and a legitimate value no criterion happens to
+  name must not be blocked. A record matching a negated criterion is reported as
+  consequential rather than mistaken — it withdraws acceptance rather than
+  granting it. _refines: CMP-R01, CMP-R07._
+
+- **CMP.DM-R13e A self-contradicting criterion is refused.** A criterion that
+  cannot be satisfied by any record, because it contradicts itself, is rejected
+  when it is written. This is deliberately smaller than deciding whether a
+  criterion *will* be satisfied, which is not decidable here — satisfaction can
+  depend on whether a named actor ever acts. Being smaller, it is a claim that
+  can always be kept. _refines: CMP-R01._
 
 ### Readiness
 

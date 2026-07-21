@@ -89,7 +89,7 @@ reports `{2, 4}` as divergence, which it is not: those versions do not share a
 predecessor. A stored head would have made this detectable ("head names 4, its
 parent is absent, wait"). The property was real; the claim that it dominated was
 not. This is why convergence must come from the replication substrate
-(CMP-R17), not from the chain.
+(CMP-R05), not from the chain.
 
 **There is no compare-and-swap, so reconciliation can itself diverge.** The
 comparison to distributed version control was misapplied: that system's safety

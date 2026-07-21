@@ -107,6 +107,24 @@ Dependencies and cross-plan references are ordinary language references.
   is a constraint on how intent is written.
 - Intent is a program. Everything about determinism and capability in 0011
   follows from this decision, and neither can be relaxed independently.
-- The authored form and the stored form are now different artifacts. The stored
-  form is what replicates, what is hashed, and what is read; it is never
-  authored by hand.
+- The authored form is what replicates, what is hashed, and what is read.
+
+## Amendment 1 — there is one artifact, not two
+
+The final consequence originally read that the authored form and the stored form
+are different artifacts, and that the stored form is never authored by hand. That
+is superseded by
+[0014](./0014-a-version-is-a-module-and-peer-code-is-executed.md): a committed
+version *is* the authored module, stored unchanged.
+
+The error was carried over from the document-authoring design this decision
+replaced, where a draft was rendered into a separate stored form. Once intent is
+code and a revision references its predecessor by importing it, a second form is
+not merely unnecessary but impossible — a reference cannot be imported from a
+rendering.
+
+Nothing else in this decision depends on the distinction. Declared identity, the
+absence of minting, and the unrepresentability of dropping a Step all hold
+regardless of how many artifacts exist, and they are strengthened by there being
+one: the declared name is inside the hashed bytes for free, rather than needing
+to be deliberately carried into a derived form.

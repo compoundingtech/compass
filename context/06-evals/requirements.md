@@ -27,10 +27,10 @@
 
 - **CMP.EVAL-R02 Evals assert observable properties, never exact output.**
   Assertions are about counts, relationships, and invariants — how many
-  versions, which reference survived, whether divergence is open — never about
-  bytes. Identity is a content hash, so any change to a document rewrites every
-  hash in every expected output; a suite that pins bytes would churn on
-  unrelated changes and be regenerated without being read.
+  versions, which Step survived, whether divergence is open — never about bytes.
+  Identity is a hash of a version's source, so any change to that source
+  rewrites every hash in every expected output; a suite that pins bytes would
+  churn on unrelated changes and be regenerated without being read.
   _refines: CMP-R07._
 
 - **CMP.EVAL-R03 Evals drive the operator surface.** A scenario runs the CLI as
@@ -56,12 +56,27 @@
   to a newcomer. _refines: CMP-R03._
 
 - **CMP.EVAL-R07 Scenarios cover the states the design calls normal.**
-  Divergence, orphans, retries, and reconciliation are ordinary conditions here,
-  not edge cases. A suite that exercises only the linear path proves the system
-  in the one state its design does not consider interesting.
-  _refines: CMP-R04, CMP-R05._
+  Divergence, orphans, unresolved Plans, retries, and reconciliation are
+  ordinary conditions here, not edge cases. A suite that exercises only the
+  linear path proves the system in the one state its design does not consider
+  interesting. _refines: CMP-R04, CMP-R05._
 
 - **CMP.EVAL-R08 Evals are hermetic.** A scenario creates its own catalog,
-  depends on no ambient state, and leaves nothing behind. Identity is minted
-  from randomness, so a scenario must not assume a reference it did not capture
-  from output. _refines: CMP-R06._
+  depends on no ambient state, and leaves nothing behind. Step identities are
+  declared, so a scenario may name them directly; nothing that a scenario has
+  not itself authored may be assumed present. _refines: CMP-R06._
+
+- **CMP.EVAL-R09 Structural impossibility is proven by attempting it.** Where
+  the design claims something cannot be expressed rather than that it is
+  refused — dropping a Step is the case — a scenario attempts it and shows there
+  is nothing to attempt. A claim of impossibility that is never tried is
+  indistinguishable from a check nobody wrote, and the two fail very
+  differently. _refines: CMP-R02, CMP-R07._
+
+- **CMP.EVAL-R10 Scenarios exercise the execution boundary.** Reading runs code
+  that may have arrived from elsewhere, so the suite must cover what happens
+  when that code misbehaves: evaluation that does not terminate is stopped, and
+  a reference that has not arrived is reported as unresolved rather than as
+  absence or emptiness. These are the failure modes the design accepted
+  deliberately, and an accepted failure mode that is never exercised is an
+  assumption. _refines: CMP-R12, CMP-R13._

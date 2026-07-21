@@ -98,3 +98,24 @@ so long as semantics are preserved.
   it must not be quietly reversed for convenience.
 - Determinism is a property to be tested, not assumed. It rests on an explicit
   allowlist, and any addition to that list is a change to this decision.
+
+## Amendment 1 — identity is the hash of authored source
+
+The Decision above states that identity is the hash of the evaluated result and
+never of transpiled source. The second half stands; the first does not.
+
+[0014](./0014-a-version-is-a-module-and-peer-code-is-executed.md) settles that a
+committed version *is* the authored module, stored unchanged. Identity is
+therefore the hash of the **authored source bytes** — which is neither the
+evaluated result nor transpiled output.
+
+The reasoning that produced the original wording survives intact and still
+governs: identity must not depend on the transformer, because a young dependency
+that reformats its output would otherwise make every upgrade an identity
+migration. Hashing authored source satisfies that as completely as hashing the
+evaluated result would, and satisfies it more simply — the transformer's output
+is never stored, never compared, and never seen.
+
+What the original wording got wrong was assuming a stored form separate from what
+the author wrote. Once the two are the same artifact, there is nothing to hash
+*but* the source.

@@ -67,3 +67,24 @@
   a permission bit surviving replication, and treats every received file as
   untrusted until its identity is checked.
   _refines: CMP-R07._
+
+- **CMP.INT-R09 Replicated versions are executed.** What arrives is not data to
+  be parsed but intent to be run: reading a replicated Plan evaluates modules
+  authored on another machine. This must be stated at the boundary rather than
+  discovered from the model, because it is the point at which the evaluation
+  environment stops protecting against local accident and starts being the only
+  thing standing between a peer's Plan and this machine.
+  _refines: CMP-R12, CMP-T05._
+
+- **CMP.INT-R10 An undelivered reference makes a Plan unreadable, not merely
+  incomplete.** Replication that has not yet delivered something a Plan
+  references leaves that Plan unresolved: it answers nothing at all, rather than
+  answering with a short lineage. This is more severe than a missing predecessor
+  and must be reported as its own condition, because an operator who reads it as
+  an ordinary gap will wait for a Plan to fill in when what is actually missing
+  is the thing without which nothing can be read. _refines: CMP-R05, CMP-R07._
+
+- **CMP.INT-R11 Only committed content replicates.** What Compass derives to make
+  reading affordable stays on the machine that derived it and is never declared
+  to the replication mechanism. Shipping a derived value gives two machines
+  something to disagree about that neither authored. _refines: CMP-R06, CMP-R14._

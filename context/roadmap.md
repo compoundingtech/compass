@@ -34,9 +34,14 @@ Constrained by [decision 0003](./.decisions/0003-storage-is-a-catalog-replicated
 Amendment 3: no-delete replication means removal is unavailable, so compaction
 cannot work by deleting, and a tombstone leaves files in the scan path.
 
-The plausible direction is a summary version subsuming a range of lineage,
-paired with a derived index so discovery need not parse every file. Both
-interact with CMP-A03 and with DQ06.
+The plausible direction is a summary version subsuming a range of lineage. It
+does not follow from the index: the index makes re-reading cheap and does
+nothing about how many files exist or how many are scanned to discover them.
+
+A summary version is harder here than under an inert format, because a later
+version references its predecessor and evaluating it evaluates the chain. A
+summary that is not referenced saves nothing, and one that is referenced changes
+what the lineage says.
 
 ## Projection to external trackers
 
