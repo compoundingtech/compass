@@ -100,3 +100,14 @@ CMP-R10 warns about. Whether a bound may differ between machines is the sharper
 form of the question, since a Plan readable on one machine and stopped on
 another is a Plan two machines disagree about.
 
+
+**DQ10 — How does a version record the API it was authored against?**
+The authoring library changes, and a committed version is immutable and read
+forever, so a version must be evaluable under the API it was written against
+rather than whichever is current. The compatibility identity is settled
+([06-api](./06-api/spec.md)); how a version *carries* it is not. Candidates: a
+field in the plan call, an import specifier that encodes the version so the
+reference is itself the pin, or a manifest beside the catalog. The import-encodes-
+it option is attractive because it makes the pin a resolved reference rather than
+an asserted value, consistent with CMP-R10, but it entangles the library's
+distribution with the catalog's contents.

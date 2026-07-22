@@ -21,7 +21,8 @@ and the acceptance vocabulary are unresolved; see
 | [03-surface](./03-surface/spec.md) | the sanctioned way to read and change a Plan | the model |
 | [04-cli](./04-cli/spec.md) | the operator interface | the surface |
 | [05-integrations](./05-integrations/spec.md) | contracts Compass consumes: catalog form, replication | the artifacts |
-| [06-evals](./06-evals/spec.md) | executable scenarios that prove the claims | the CLI |
+| [06-api](./06-api/spec.md) | the library intent is authored with | the model |
+| [07-evals](./07-evals/spec.md) | executable scenarios that prove the claims | the CLI |
 
 The dependency direction is the point. The model does not know how it is stored;
 the store does not know a CLI exists. A different realization of the same model
