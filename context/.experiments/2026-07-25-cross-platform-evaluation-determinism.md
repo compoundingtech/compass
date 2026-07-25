@@ -6,13 +6,14 @@ Validates the property that a plan's identity is the same on every platform —
 the basis for "same source produces the same version everywhere", which several
 requirements rest on and which had been an inference rather than a measurement.
 
-## Hypothesis
+## Question
 
-Evaluating a plan produces byte-identical output on x86_64-linux,
-aarch64-linux, and aarch64-darwin, because a plan is pure data construction and
-the only platform-variable surface identified in earlier research —
-libc-delegated transcendental Math — is not reached by a plan and is removed
-from the evaluation global regardless.
+Does evaluating a plan produce byte-identical output across x86_64-linux,
+aarch64-linux, and aarch64-darwin? A plan is pure data construction, and the only
+platform-variable surface earlier research identified — libc-delegated
+transcendental Math — is neither reached by a plan nor present in the evaluation
+global. If the property holds, "same source produces the same version everywhere"
+is measured rather than assumed.
 
 ## Method
 
@@ -43,19 +44,17 @@ The serialized-plan line was hashed on each and compared.
 ## Result
 
 The canonical plan serialization was **byte-identical on all three platforms**
-(SHA-256 `5160e9b3…`). The hypothesis holds: a plan's identity does not depend on
-the platform it is evaluated on.
+(SHA-256 `5160e9b3…`).
 
 The negative control was more interesting than expected. Every transcendental —
 `sin`, `cos`, `exp`, `log`, `pow`, `tanh` — was **also identical across all
 three**, including on Apple libm. The predicted glibc-vs-Apple-libm divergence
 did not manifest for these inputs on QuickJS-ng 0.14.0.
 
-## Interpretation
+## Conclusion
 
-The load-bearing conclusion is unaffected and now measured rather than assumed:
-plan identity is platform-independent, because a plan constructs data and touches
-none of the platform-variable surface.
+Plan identity is platform-independent, now measured rather than assumed: a plan
+constructs data and touches none of the platform-variable surface.
 
 The control result is a genuine discrepancy with the earlier research, which read
 QuickJS-ng master delegating every transcendental straight to libc and cited
@@ -67,18 +66,21 @@ platforms in general — only that they did here.
 
 The Math lock therefore stands as insurance rather than a demonstrated-necessary
 fix: primary sources still show some inputs diverge, a plan has no reason to call
-these functions, and removing them costs three lines. What this experiment
-establishes is that the lock is not load-bearing for plan identity — identity is
-safe because plans do not do arithmetic of this kind at all, not because the lock
-catches a divergence that was about to corrupt a hash.
+these functions, and removing them costs three lines. What this establishes is
+that the lock is not load-bearing for plan identity — identity is safe because
+plans do not do arithmetic of this kind at all, not because the lock catches a
+divergence that was about to corrupt a hash.
 
-## Threats to validity
+Threats to validity: one probe and one set of Math inputs, so a wider sweep could
+still surface the predicted transcendental divergence; `qjs` is the standalone
+interpreter rather than the embedded `rquickjs` the tool will use, though they
+share the QuickJS-ng core; and darwin coverage is aarch64 only, with no
+x86_64-darwin in the fleet.
 
-- One probe, one set of Math inputs. A wider input sweep could still surface the
-  predicted transcendental divergence; this experiment did not attempt one,
-  because transcendentals are outside what a plan evaluates.
-- `qjs` is the standalone interpreter, not the embedded `rquickjs` the tool will
-  use. They share the QuickJS-ng core, so engine-level number and string
-  behaviour is the same, but the embedding has not itself been run cross-platform.
-- Darwin coverage is aarch64 only; no x86_64-darwin was tested, and none is in
-  the fleet.
+## VRS Impact
+
+Confirms CMP-A03 (evaluation is reproducible), which required testing rather than
+assumption; the requirement now cites this record. No change to any decision. The
+Math-lock provisions of 0011 are unchanged — reclassified in rationale from
+necessary fix to insurance, which is a matter of record here rather than a change
+to the decision.
