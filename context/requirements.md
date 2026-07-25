@@ -28,7 +28,10 @@ for one layer:
   result on every machine and across engine versions. Agreement about what a
   Plan says — its Steps, their identities, their acceptance — rests on this, so
   it must be tested rather than assumed, and any widening of what evaluation can
-  reach is a change to this assumption.
+  reach is a change to this assumption. Measured across x86_64-linux,
+  aarch64-linux, and aarch64-darwin: a plan's canonical serialization is
+  byte-identical on all three
+  ([experiment](./.experiments/2026-07-25-cross-platform-evaluation-determinism.md)).
 
 ## Acceptable Tradeoffs
 
