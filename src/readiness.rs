@@ -27,8 +27,7 @@
 //! acceptance predicate as the gate — it is the only authored condition a step
 //! carries besides its dependencies. Noted as a spec ambiguity.
 
-use crate::catalog::{Admitted, PlanStore};
-use crate::event::EventKind;
+use crate::event::{Event, EventKind};
 use crate::model::{Step, Version};
 use crate::predicate::Evidence;
 use std::collections::HashSet;
@@ -92,7 +91,7 @@ impl HeadReadiness {
 /// An event recorded against a Step that a later version superseded is
 /// attributed to the superseding Step, so a rename or a split does not discard
 /// the evidence already gathered.
-fn evidence_for(store: &PlanStore, version: &Version, step: &Step) -> Vec<Evidence> {
+fn evidence_for(events: &[Event], version: &Version, step: &Step) -> Vec<Evidence> {
     // Walk the supersedes chain within this version.
     let mut refs: HashSet<&str> = HashSet::new();
     let mut cursor = Some(step);
@@ -112,18 +111,15 @@ fn evidence_for(store: &PlanStore, version: &Version, step: &Step) -> Vec<Eviden
         refs.insert(prev);
     }
 
-    store
-        .events
+    events
         .iter()
         .filter(|e| e.kind == EventKind::Evidence && refs.contains(e.step.as_str()))
         .filter_map(|e| e.as_evidence())
         .collect()
 }
 
-/// Compute readiness for one head member.
-pub fn for_head(store: &PlanStore, head: &Admitted, orphan: bool) -> HeadReadiness {
-    let version = &head.version;
-
+/// Compute readiness for one head member, from its evaluated intent.
+pub fn for_head(events: &[Event], version: &Version, hash: &str, orphan: bool) -> HeadReadiness {
     // Accepted-ness of every step, needed before dependencies can be judged.
     //
     // A retired step is never accepted for this purpose, even when evidence
@@ -143,7 +139,7 @@ pub fn for_head(store: &PlanStore, head: &Admitted, orphan: bool) -> HeadReadine
             if s.retired {
                 return (s.id.clone(), false);
             }
-            let ev = evidence_for(store, version, s);
+            let ev = evidence_for(events, version, s);
             (s.id.clone(), s.accept.eval(&ev))
         })
         .collect();
@@ -159,7 +155,7 @@ pub fn for_head(store: &PlanStore, head: &Admitted, orphan: bool) -> HeadReadine
         .steps
         .iter()
         .map(|s| {
-            let ev = evidence_for(store, version, s);
+            let ev = evidence_for(events, version, s);
             let accept = s.accept.to_string();
 
             if s.retired {
@@ -230,7 +226,7 @@ pub fn for_head(store: &PlanStore, head: &Admitted, orphan: bool) -> HeadReadine
         .collect();
 
     HeadReadiness {
-        head: head.hash.clone(),
+        head: hash.to_string(),
         seq: version.seq,
         author: version.author.clone(),
         orphan,
@@ -238,38 +234,16 @@ pub fn for_head(store: &PlanStore, head: &Admitted, orphan: bool) -> HeadReadine
     }
 }
 
-/// Readiness for every head member, labelled. Never picks a side.
-pub fn for_plan<'a>(
-    store: &'a PlanStore,
-    analysis: &crate::chain::Analysis<'a>,
-) -> Vec<HeadReadiness> {
-    analysis
-        .head
-        .iter()
-        .map(|h| for_head(store, h, analysis.is_orphan(&h.hash)))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::Admitted;
     use crate::event::Event;
-    use crate::model::Step;
+    use crate::model::{Step, Version};
     use crate::predicate::parse as pred;
-    use std::path::PathBuf;
 
     const PLAN: &str = "pl_1000000000";
     const A: &str = "st_A000000001";
     const B: &str = "st_B000000002";
-
-    fn admit(version: Version) -> Admitted {
-        Admitted {
-            hash: version.hash(),
-            path: PathBuf::from("/dev/null"),
-            version,
-        }
-    }
 
     /// Two steps: B depends on A.
     fn two_step_version() -> Version {
@@ -294,6 +268,12 @@ mod tests {
             retired: false,
             steps: vec![a, b],
         }
+    }
+
+    /// Readiness against one head member. Chain analysis and per-head labelling
+    /// live in the CLI now; here we test the readiness computation directly.
+    fn run(version: &Version, events: &[Event]) -> HeadReadiness {
+        for_head(events, version, "hash0", false)
     }
 
     fn evidence_event(step: &str, kind: &str, attrs: &[(&str, &str)], at: u64) -> Event {
@@ -331,28 +311,13 @@ mod tests {
         }
     }
 
-    fn store_with(version: Version, events: Vec<Event>) -> (PlanStore, Admitted) {
-        let a = admit(version);
-        (
-            PlanStore {
-                plan: PLAN.into(),
-                versions: vec![a.clone()],
-                events,
-                ..Default::default()
-            },
-            a,
-        )
-    }
-
     fn find<'a>(r: &'a HeadReadiness, id: &str) -> &'a StepReadiness {
         r.steps.iter().find(|s| s.step == id).unwrap()
     }
 
     #[test]
     fn with_no_evidence_only_the_unblocked_step_is_ready() {
-        let (s, h) = store_with(two_step_version(), vec![]);
-        let r = for_head(&s, &h, false);
-
+        let r = run(&two_step_version(), &[]);
         assert_eq!(find(&r, A).state, StepState::Ready);
         assert_eq!(find(&r, B).state, StepState::Blocked);
         assert_eq!(find(&r, B).blocked_by, vec![A.to_string()]);
@@ -361,17 +326,15 @@ mod tests {
 
     #[test]
     fn evidence_accepts_a_step_and_unblocks_its_dependent() {
-        let (s, h) = store_with(
-            two_step_version(),
-            vec![evidence_event(
+        let r = run(
+            &two_step_version(),
+            &[evidence_event(
                 A,
                 "test",
                 &[("name", "x"), ("status", "fail")],
                 1,
             )],
         );
-        let r = for_head(&s, &h, false);
-
         assert_eq!(find(&r, A).state, StepState::Accepted);
         assert_eq!(find(&r, B).state, StepState::Ready);
     }
@@ -379,17 +342,15 @@ mod tests {
     #[test]
     fn a_done_event_does_not_accept_a_step() {
         // CMP-R14: an external observation must never complete a Step.
-        let (s, h) = store_with(
-            two_step_version(),
-            vec![
+        let r = run(
+            &two_step_version(),
+            &[
                 plain_event(A, EventKind::Start, 1),
                 plain_event(A, EventKind::Update, 2),
                 plain_event(A, EventKind::Handoff, 3),
                 plain_event(A, EventKind::Done, 4),
             ],
         );
-        let r = for_head(&s, &h, false);
-
         assert_eq!(
             find(&r, A).state,
             StepState::Ready,
@@ -400,9 +361,9 @@ mod tests {
 
     #[test]
     fn non_matching_evidence_does_not_accept() {
-        let (s, h) = store_with(
-            two_step_version(),
-            vec![evidence_event(
+        let r = run(
+            &two_step_version(),
+            &[evidence_event(
                 A,
                 "test",
                 &[("name", "x"), ("status", "pass")],
@@ -410,30 +371,28 @@ mod tests {
             )],
         );
         // Step A wants status=fail.
-        assert_eq!(find(&for_head(&s, &h, false), A).state, StepState::Ready);
+        assert_eq!(find(&r, A).state, StepState::Ready);
     }
 
     #[test]
     fn evidence_filed_against_another_step_does_not_leak() {
-        let (s, h) = store_with(
-            two_step_version(),
-            vec![evidence_event(
+        let r = run(
+            &two_step_version(),
+            &[evidence_event(
                 B,
                 "test",
                 &[("name", "x"), ("status", "fail")],
                 1,
             )],
         );
-        assert_eq!(find(&for_head(&s, &h, false), A).state, StepState::Ready);
+        assert_eq!(find(&r, A).state, StepState::Ready);
     }
 
     #[test]
     fn a_retired_step_is_excluded_and_never_accepts_its_dependents() {
         let mut v = two_step_version();
         v.steps[0].retired = true;
-        let (s, h) = store_with(v, vec![]);
-        let r = for_head(&s, &h, false);
-
+        let r = run(&v, &[]);
         assert_eq!(find(&r, A).state, StepState::Retired);
         assert_eq!(find(&r, B).state, StepState::Blocked);
         assert!(
@@ -445,22 +404,19 @@ mod tests {
 
     #[test]
     fn evidence_on_a_retired_step_does_not_unblock_its_dependent() {
-        // Spec: an event against a retired Step is retained but does not
-        // contribute to Readiness. Matching evidence must therefore not
-        // satisfy a dependency on a retired step.
+        // An event against a retired Step is retained but does not contribute
+        // to Readiness, so matching evidence must not satisfy a dependency.
         let mut v = two_step_version();
         v.steps[0].retired = true;
-        let (s, h) = store_with(
-            v,
-            vec![evidence_event(
+        let r = run(
+            &v,
+            &[evidence_event(
                 A,
                 "test",
                 &[("name", "x"), ("status", "fail")],
                 1,
             )],
         );
-        let r = for_head(&s, &h, false);
-
         assert_eq!(find(&r, A).state, StepState::Retired);
         assert_eq!(
             find(&r, B).state,
@@ -481,16 +437,16 @@ mod tests {
         v.steps[1].supersedes = Some(A.to_string());
         v.steps[1].depends_on = vec![];
         v.steps[1].accept = pred("test(name=x, status=pass)").unwrap();
-        let (s, h) = store_with(
-            v,
-            vec![evidence_event(
+        let r = run(
+            &v,
+            &[evidence_event(
                 A,
                 "test",
                 &[("name", "x"), ("status", "pass")],
                 1,
             )],
         );
-        assert_eq!(find(&for_head(&s, &h, false), B).state, StepState::Accepted);
+        assert_eq!(find(&r, B).state, StepState::Accepted);
     }
 
     #[test]
@@ -501,16 +457,15 @@ mod tests {
             c.retired = true;
             c
         });
-        let (s, h) = store_with(
-            v,
-            vec![evidence_event(
+        let r = run(
+            &v,
+            &[evidence_event(
                 A,
                 "test",
                 &[("name", "x"), ("status", "fail")],
                 1,
             )],
         );
-        let r = for_head(&s, &h, false);
         for step in &r.steps {
             assert!(
                 !step.reason.trim().is_empty(),
@@ -522,8 +477,7 @@ mod tests {
 
     #[test]
     fn a_blocked_step_names_the_dependency_holding_it() {
-        let (s, h) = store_with(two_step_version(), vec![]);
-        let r = for_head(&s, &h, false);
+        let r = run(&two_step_version(), &[]);
         let b = find(&r, B);
         assert!(b.reason.contains(A), "{}", b.reason);
         assert!(b.reason.contains("Reproduce"), "{}", b.reason);
@@ -531,60 +485,20 @@ mod tests {
 
     #[test]
     fn a_ready_step_explains_what_would_accept_it() {
-        let (s, h) = store_with(two_step_version(), vec![]);
-        let r = for_head(&s, &h, false);
-        let a = find(&r, A);
+        let r = run(&two_step_version(), &[]);
         assert!(
-            a.reason.contains("test(name=x, status=fail)"),
+            find(&r, A).reason.contains("test(name=x, status=fail)"),
             "{}",
-            a.reason
+            find(&r, A).reason
         );
     }
 
     #[test]
-    fn readiness_is_reported_per_head_member_under_divergence() {
-        let base = two_step_version();
-
-        let mut left = base.clone();
-        left.seq = 2;
-        left.why = "cos side".into();
-        left.parents = vec![admit(base.clone()).hash];
-
-        let mut right = base.clone();
-        right.seq = 2;
-        right.why = "dev side".into();
-        right.author = "dev".into();
-        right.parents = vec![admit(base.clone()).hash];
-        // The two sides carry genuinely different graphs.
-        right.steps.pop();
-
-        let store = PlanStore {
-            plan: PLAN.into(),
-            versions: vec![admit(base), admit(left), admit(right)],
-            ..Default::default()
-        };
-        let analysis = crate::chain::analyze(&store);
-        assert!(analysis.diverged());
-
-        let all = for_plan(&store, &analysis);
-        assert_eq!(all.len(), 2, "one answer per head member");
-        let authors: HashSet<&str> = all.iter().map(|r| r.author.as_str()).collect();
-        assert!(authors.contains("cos") && authors.contains("dev"));
-        // The graphs are not merged.
-        let sizes: HashSet<usize> = all.iter().map(|r| r.steps.len()).collect();
-        assert_eq!(sizes, HashSet::from([1, 2]));
-    }
-
-    #[test]
-    fn an_orphaned_head_member_is_labelled_as_such() {
-        let mut v = two_step_version();
-        v.parents = vec!["f".repeat(64)];
-        let (s, _h) = store_with(v, vec![]);
-        let analysis = crate::chain::analyze(&s);
-        let all = for_plan(&s, &analysis);
-        assert_eq!(all.len(), 1);
+    fn an_orphan_head_is_labelled() {
+        let v = two_step_version();
+        let r = for_head(&[], &v, "hash0", true);
         assert!(
-            all[0].orphan,
+            r.orphan,
             "an orphan head must be flagged, not silently served"
         );
     }
@@ -593,8 +507,7 @@ mod tests {
     fn composite_acceptance_is_evaluated_and_explained() {
         let mut v = two_step_version();
         v.steps[0].accept = pred("all(test(status=pass), review(by=cos))").unwrap();
-        let (s, h) = store_with(v, vec![evidence_event(A, "test", &[("status", "pass")], 1)]);
-        let r = for_head(&s, &h, false);
+        let r = run(&v, &[evidence_event(A, "test", &[("status", "pass")], 1)]);
         let a = find(&r, A);
         assert_eq!(a.state, StepState::Ready);
         assert!(a.reason.contains("review(by=cos)"), "{}", a.reason);
@@ -604,18 +517,15 @@ mod tests {
     fn acceptance_can_be_revoked_by_later_evidence() {
         let mut v = two_step_version();
         v.steps[0].accept = pred("not(test(status=fail))").unwrap();
-        let (s, h) = store_with(v.clone(), vec![]);
-        assert_eq!(find(&for_head(&s, &h, false), A).state, StepState::Accepted);
-
-        let (s2, h2) = store_with(v, vec![evidence_event(A, "test", &[("status", "fail")], 1)]);
-        assert_eq!(find(&for_head(&s2, &h2, false), A).state, StepState::Ready);
+        assert_eq!(find(&run(&v, &[]), A).state, StepState::Accepted);
+        let r = run(&v, &[evidence_event(A, "test", &[("status", "fail")], 1)]);
+        assert_eq!(find(&r, A).state, StepState::Ready);
     }
 
     #[test]
     fn a_version_with_no_steps_yields_no_readiness_rows() {
         let mut v = two_step_version();
         v.steps.clear();
-        let (s, h) = store_with(v, vec![]);
-        assert!(for_head(&s, &h, false).steps.is_empty());
+        assert!(run(&v, &[]).steps.is_empty());
     }
 }

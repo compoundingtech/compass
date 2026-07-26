@@ -1,6 +1,6 @@
 import { reconcile } from "compass"
-import fuzzSide from "./002-7280a933f7cc.ts"
-import splitSide from "./002-ff95b74b4e9f.ts"
+import fuzzSide from "./002-2c922cb978de.ts"
+import splitSide from "./002-e5d27ee538bf.ts"
 
 // A Reconciliation is an ordinary revision with more than one predecessor.
 // Every Step of both sides is carried forward — neither the fuzz step nor the

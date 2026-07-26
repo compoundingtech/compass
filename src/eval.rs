@@ -484,6 +484,43 @@ fn first_diag<T: std::fmt::Display>(errs: &[T]) -> String {
         .unwrap_or_else(|| "syntax error".to_string())
 }
 
+/// The import specifiers a module declares, statically (no evaluation).
+///
+/// A version references its predecessors by importing their files, so the
+/// lineage can be walked from source bytes alone — admission never runs a module
+/// (02-artifacts). Returns every specifier, including `"compass"`.
+pub fn import_specifiers(source: &str, path: &Path) -> Result<Vec<String>, EvalError> {
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::Statement;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+
+    let allocator = Allocator::default();
+    let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
+    let ret = Parser::new(&allocator, source, source_type).parse();
+    if ret.panicked {
+        return Err(EvalError::Failed(format!(
+            "{}: cannot parse: {}",
+            path.display(),
+            first_diag(&ret.diagnostics)
+        )));
+    }
+    let mut specs = Vec::new();
+    for stmt in &ret.program.body {
+        match stmt {
+            Statement::ImportDeclaration(import) => specs.push(import.source.value.to_string()),
+            Statement::ExportNamedDeclaration(e) => {
+                if let Some(src) = &e.source {
+                    specs.push(src.value.to_string());
+                }
+            }
+            Statement::ExportAllDeclaration(e) => specs.push(e.source.value.to_string()),
+            _ => {}
+        }
+    }
+    Ok(specs)
+}
+
 /// Append one registration call per exported top-level `const`, so a step
 /// learns the name it was declared under. Consumption is lazy (see the prelude),
 /// so appending after the module body is correct.

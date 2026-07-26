@@ -19,7 +19,7 @@
 //! reading the log, and nothing orders on it.
 
 use crate::block::{parse as parse_block, Block, Doc, ParseError};
-use crate::model::EXT;
+use crate::model::EVENT_EXT;
 use crate::predicate::Evidence;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -248,7 +248,7 @@ impl Event {
     /// Storage filename: `<at>-<id>.<ext>`, zero-padded so a directory listing
     /// sorts in logical order.
     pub fn filename(&self) -> String {
-        format!("{:012}-{}.{}", self.at, self.id, EXT)
+        format!("{:012}-{}.{}", self.at, self.id, EVENT_EXT)
     }
 }
 

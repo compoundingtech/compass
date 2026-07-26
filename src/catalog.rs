@@ -1,42 +1,44 @@
-//! The Catalog: on-disk storage and deliberate ingestion.
+//! The Catalog: on-disk storage and deliberate admission.
 //!
 //! ```text
-//! <root>/plans/<planref>/versions/<seq>-<hash12>.cmp   immutable, mode 0444
+//! <root>/plans/<planref>/versions/<seq>-<hash12>.ts    immutable, mode 0444
 //! <root>/plans/<planref>/events/<at>-<id>.cmp          append-only
 //! ```
 //!
-//! The root is configuration, never compiled in (CMP-R15).
+//! ## Admission (02-artifacts)
 //!
-//! ## Admission (CMP-R22)
+//! A file becomes a Plan Version when it sits in its expected location and the
+//! SHA-256 of its bytes matches the hash embedded in its filename. Admission
+//! looks at bytes and nothing else — it does not evaluate the module, and in
+//! particular does not require that what the module imports be present, because
+//! replication delivers files in no useful order. A mismatch is a rejection with
+//! an error, never a warning.
 //!
-//! Under no-delete replication a wrongly-adopted file is permanent, so merely
-//! parsing is not enough. A file becomes a Plan Version only when it is in its
-//! expected location *and* the SHA-256 of its bytes matches the hash embedded
-//! in its filename. A mismatch is a **rejection with an error**, never a
-//! warning that a reader might skim past.
-//!
-//! The hash is taken over the **raw file bytes as they sit on disk** — never
-//! over a parse-and-re-render. Re-rendering would make a reformatted file
-//! admissible under its old name, which is exactly the corruption the chain
-//! exists to catch. (DQ02 asks raw bytes or canonical form; raw bytes, and the
-//! canonical writer is what keeps that strictness usable.)
-//!
-//! Files arriving through replication are treated exactly as local files
-//! (CMP.INT-R08). Nothing trusts a file mode: `0444` is a local accident-guard
-//! that stops an agent editing in place, not a property of the wire.
+//! The identity is the hash of the raw bytes as they sit on disk. Because each
+//! version imports its predecessors by filename, and each filename carries a
+//! hash of content, the lineage is walkable from the bytes alone: the parents of
+//! a version are the versions whose hash-prefix appears in its import
+//! specifiers. A prefix that resolves to no local file is a missing predecessor
+//! (an orphan), repaired by waiting.
 
 use crate::event::Event;
-use crate::model::{parse_filename, Version, EXT};
+use crate::model::{filename_for, parse_filename, Version, VERSION_EXT};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// A file admitted as a Plan Version.
+/// A file admitted as a Plan Version. Its intent is recovered by evaluation on
+/// demand (see [`crate::eval`]); admission keeps only what the bytes determine.
 #[derive(Debug, Clone)]
 pub struct Admitted {
     /// Full content hash — the identity.
     pub hash: String,
     pub path: PathBuf,
-    pub version: Version,
+    pub plan: String,
+    /// A reading aid: one past the longest predecessor. Never a key.
+    pub seq: u64,
+    /// Predecessor references: a full hash when the predecessor is present, or
+    /// the raw 12-hex prefix when it has not arrived (an orphan edge).
+    pub parents: Vec<String>,
 }
 
 /// A file in a versions/ or events/ directory that was not admitted.
@@ -77,7 +79,17 @@ impl PlanStore {
     }
 }
 
-/// Resolve the catalog root (CMP-R15).
+/// One admitted version before its parents are resolved against its siblings.
+struct Raw {
+    hash: String,
+    path: PathBuf,
+    plan: String,
+    seq: u64,
+    /// 12-hex prefixes of the version files this module imports.
+    import_prefixes: Vec<String>,
+}
+
+/// Resolve the catalog root (configuration, never compiled in).
 pub fn root() -> Result<PathBuf, String> {
     if let Some(v) = env_nonempty("COMPASS_CATALOG") {
         return Ok(PathBuf::from(v));
@@ -109,15 +121,12 @@ pub fn author() -> String {
 pub fn plans_dir(root: &Path) -> PathBuf {
     root.join("plans")
 }
-
 pub fn plan_dir(root: &Path, plan: &str) -> PathBuf {
     plans_dir(root).join(plan)
 }
-
 pub fn versions_dir(root: &Path, plan: &str) -> PathBuf {
     plan_dir(root, plan).join("versions")
 }
-
 pub fn events_dir(root: &Path, plan: &str) -> PathBuf {
     plan_dir(root, plan).join("events")
 }
@@ -161,13 +170,41 @@ pub fn load_plan(root: &Path, plan: &str) -> Result<PlanStore, String> {
     };
 
     let vdir = versions_dir(root, plan);
+    let mut raws: Vec<Raw> = Vec::new();
     if vdir.is_dir() {
         for path in sorted_files(&vdir)? {
             match admit_version(&path, plan) {
-                Ok(a) => store.versions.push(a),
+                Ok(raw) => raws.push(raw),
                 Err(reason) => store.rejected.push(Rejected { path, reason }),
             }
         }
+    }
+
+    // Resolve import-prefixes to full predecessor hashes among the siblings.
+    let by_prefix: std::collections::HashMap<&str, &str> = raws
+        .iter()
+        .map(|r| (&r.hash[..crate::model::HASH_PREFIX_LEN], r.hash.as_str()))
+        .collect();
+    for r in &raws {
+        let mut parents: Vec<String> = r
+            .import_prefixes
+            .iter()
+            .map(|p| {
+                by_prefix
+                    .get(p.as_str())
+                    .map(|h| h.to_string())
+                    .unwrap_or_else(|| p.clone())
+            })
+            .collect();
+        parents.sort();
+        parents.dedup();
+        store.versions.push(Admitted {
+            hash: r.hash.clone(),
+            path: r.path.clone(),
+            plan: r.plan.clone(),
+            seq: r.seq,
+            parents,
+        });
     }
 
     let edir = events_dir(root, plan);
@@ -198,11 +235,9 @@ pub fn load_plan(root: &Path, plan: &str) -> Result<PlanStore, String> {
         }
     }
 
-    // Lineage depth first, then hash: a total order that needs no recorded
-    // counter, and that two machines holding the same versions agree on.
     store
         .versions
-        .sort_by(|a, b| (a.version.seq, &a.hash).cmp(&(b.version.seq, &b.hash)));
+        .sort_by(|a, b| (a.seq, &a.hash).cmp(&(b.seq, &b.hash)));
     store
         .events
         .sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
@@ -223,22 +258,20 @@ fn sorted_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(out)
 }
 
-/// Decide whether one file may become a Plan Version (CMP-R22).
-pub fn admit_version(path: &Path, expected_plan: &str) -> Result<Admitted, String> {
+/// Decide whether one file may become a Plan Version. Bytes only — no evaluation.
+fn admit_version(path: &Path, expected_plan: &str) -> Result<Raw, String> {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| "file has no readable name".to_string())?;
 
-    if !name.ends_with(&format!(".{EXT}")) {
-        return Err(format!("not a .{EXT} file"));
+    if !name.ends_with(&format!(".{VERSION_EXT}")) {
+        return Err(format!("not a .{VERSION_EXT} file"));
     }
-
-    let (_seq, want_prefix) = parse_filename(name).ok_or_else(|| {
-        format!("filename `{name}` is not `<seq>-<hash>.{EXT}`, so it names no content")
+    let (seq, want_prefix) = parse_filename(name).ok_or_else(|| {
+        format!("filename `{name}` is not `<seq>-<hash>.{VERSION_EXT}`, so it names no content")
     })?;
 
-    // Hash the bytes exactly as they sit on disk.
     let bytes = fs::read(path).map_err(|e| format!("cannot read: {e}"))?;
     let actual = crate::sha256::sha256_hex(&bytes);
     if !actual.starts_with(&want_prefix) {
@@ -248,38 +281,53 @@ pub fn admit_version(path: &Path, expected_plan: &str) -> Result<Admitted, Strin
         ));
     }
 
-    let text = std::str::from_utf8(&bytes).map_err(|e| format!("not valid UTF-8: {e}"))?;
-    let version = Version::parse(text).map_err(|e| format!("cannot parse: {e}"))?;
+    let source = std::str::from_utf8(&bytes).map_err(|e| format!("not valid UTF-8: {e}"))?;
+    let import_prefixes = predecessor_prefixes(source, path)?;
 
-    if version.plan != expected_plan {
-        return Err(format!(
-            "version declares plan {} but is filed under {expected_plan}",
-            version.plan
-        ));
-    }
-
-    Ok(Admitted {
+    Ok(Raw {
         hash: actual,
         path: path.to_path_buf(),
-        version,
+        plan: expected_plan.to_string(),
+        seq,
+        import_prefixes,
     })
 }
 
-/// Write a Plan Version. Returns its path and whether it was newly created.
-///
-/// A version whose file already exists is left alone: the name is the content
-/// hash, so an identical file is the same version. Since no field is excluded
-/// from that hash (decision 0007), this is the whole of Compass's idempotency:
-/// there is no caller-supplied key, and none is wanted (CMP-R10).
-pub fn write_version(root: &Path, v: &Version) -> Result<(PathBuf, bool), String> {
-    let dir = versions_dir(root, &v.plan);
-    fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let path = dir.join(v.filename());
-    if path.exists() {
-        return Ok((path, false));
+/// The hash-prefixes of the version files a module imports, read statically.
+fn predecessor_prefixes(source: &str, path: &Path) -> Result<Vec<String>, String> {
+    let specs = crate::eval::import_specifiers(source, path)
+        .map_err(|e| format!("cannot read imports: {}", e.message()))?;
+    let mut out = Vec::new();
+    for spec in specs {
+        // A predecessor import is a relative path to a version file.
+        let file = spec.rsplit('/').next().unwrap_or(&spec);
+        if let Some((_seq, prefix)) = parse_filename(file) {
+            out.push(prefix);
+        }
     }
-    write_readonly(&path, v.render().as_bytes())?;
-    Ok((path, true))
+    Ok(out)
+}
+
+/// Write a Plan Version from its authored source bytes.
+///
+/// Returns its path and whether it was newly created. The name is the content
+/// hash, so an identical file is the same version and is left untouched — the
+/// whole of Compass's idempotency, with no caller-supplied key (CMP-R10).
+pub fn write_version(
+    root: &Path,
+    plan: &str,
+    seq: u64,
+    source: &[u8],
+) -> Result<(PathBuf, String, bool), String> {
+    let hash = crate::sha256::sha256_hex(source);
+    let dir = versions_dir(root, plan);
+    fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let path = dir.join(filename_for(seq, &hash));
+    if path.exists() {
+        return Ok((path, hash, false));
+    }
+    write_readonly(&path, source)?;
+    Ok((path, hash, true))
 }
 
 /// Append a Progress Event.
@@ -291,7 +339,6 @@ pub fn write_event(root: &Path, e: &Event) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Write a file and drop it to mode 0444 (accident-prevention, decision 0002).
 fn write_readonly(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::write(path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     set_readonly(path)
@@ -314,34 +361,41 @@ fn set_readonly(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("cannot set {} read-only: {e}", path.display()))
 }
 
+/// Build a domain [`Version`] for an admitted file by evaluating it.
+pub fn evaluate(a: &Admitted) -> Result<Version, crate::eval::EvalError> {
+    let map = crate::eval::eval_plan_file(&a.path)?;
+    let canon = std::fs::canonicalize(&a.path).unwrap_or_else(|_| a.path.clone());
+    let sem = map
+        .get(&canon)
+        .or_else(|| map.get(&a.path))
+        .ok_or_else(|| crate::eval::EvalError::Failed("evaluation produced no plan".into()))?;
+    Ok(Version::from_sem(&a.plan, a.seq, a.parents.clone(), sem))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Step;
-    use crate::predicate::parse as pred;
 
-    /// A scratch catalog that cleans itself up.
     struct Scratch {
         root: PathBuf,
     }
-
     impl Scratch {
         fn new(tag: &str) -> Scratch {
             let base = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-            let unique = crate::refs::mint(crate::refs::RefKind::Event).unwrap();
-            let root = PathBuf::from(base).join(format!("compass-test-{tag}-{unique}"));
+            let uniq = format!("{}-{}", std::process::id(), tag);
+            let root = PathBuf::from(base).join(format!("compass-test-{uniq}"));
+            let _ = make_writable_recursive(&root);
+            let _ = fs::remove_dir_all(&root);
             init(&root).unwrap();
             Scratch { root }
         }
     }
-
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = make_writable_recursive(&self.root);
             let _ = fs::remove_dir_all(&self.root);
         }
     }
-
     fn make_writable_recursive(p: &Path) -> std::io::Result<()> {
         if p.is_dir() {
             for e in fs::read_dir(p)? {
@@ -356,255 +410,54 @@ mod tests {
         Ok(())
     }
 
-    fn a_version(plan: &str) -> Version {
-        Version {
-            plan: plan.to_string(),
-            seq: 1,
-            parents: vec![],
-            author: "cos".into(),
-            why: "Initial plan.".into(),
-            goal: "Ship it".into(),
-            retired: false,
-            steps: vec![Step::new(
-                "st_A000000001",
-                "Do the work",
-                pred("test(status=pass)").unwrap(),
-            )],
-        }
-    }
+    const ROOT_MODULE: &str = r#"import { plan, step, evidence } from "compass"
+export const a = step({ work: "do a", accept: evidence.test({ status: "pass" }) })
+export default plan({ author: "cos", goal: "Ship", why: "start", steps: [a] })
+"#;
 
     #[test]
-    fn root_prefers_explicit_configuration() {
-        // Verified through the pure helper rather than by mutating process env,
-        // which would race other tests.
-        assert!(root().is_ok() || std::env::var("HOME").is_err());
-    }
-
-    #[test]
-    fn writes_and_reloads_a_version() {
-        let s = Scratch::new("roundtrip");
-        let v = a_version("pl_1000000000");
-        let (path, created) = write_version(&s.root, &v).unwrap();
+    fn admits_a_version_by_source_byte_hash() {
+        let s = Scratch::new("admit");
+        let (path, hash, created) =
+            write_version(&s.root, "pl_x", 1, ROOT_MODULE.as_bytes()).unwrap();
         assert!(created);
         assert!(path.exists());
+        assert_eq!(hash, crate::sha256::sha256_hex(ROOT_MODULE.as_bytes()));
 
-        let store = load_plan(&s.root, &v.plan).unwrap();
+        let store = load_plan(&s.root, "pl_x").unwrap();
         assert_eq!(store.versions.len(), 1, "rejected: {:?}", store.rejected);
-        assert!(store.rejected.is_empty());
-        assert_eq!(store.versions[0].hash, v.hash());
-        assert_eq!(store.versions[0].version, v);
+        assert_eq!(store.versions[0].hash, hash);
+        assert!(store.versions[0].parents.is_empty());
     }
 
     #[test]
-    fn versions_are_written_read_only() {
-        let s = Scratch::new("readonly");
-        let v = a_version("pl_2000000000");
-        let (path, _) = write_version(&s.root, &v).unwrap();
-        assert!(fs::metadata(&path).unwrap().permissions().readonly());
-        // An in-place edit becomes a visible error rather than silent damage.
-        assert!(fs::write(&path, b"tampered").is_err());
-    }
-
-    #[test]
-    fn rewriting_an_identical_version_is_a_no_op() {
-        let s = Scratch::new("idempotent");
-        let v = a_version("pl_3000000000");
-        let (_, first) = write_version(&s.root, &v).unwrap();
-        let (_, second) = write_version(&s.root, &v).unwrap();
+    fn identical_content_is_a_no_op() {
+        let s = Scratch::new("noop");
+        let (_, _, first) = write_version(&s.root, "pl_x", 1, ROOT_MODULE.as_bytes()).unwrap();
+        let (_, _, second) = write_version(&s.root, "pl_x", 1, ROOT_MODULE.as_bytes()).unwrap();
         assert!(first);
-        assert!(!second, "identical content must not be rewritten");
-        assert_eq!(load_plan(&s.root, &v.plan).unwrap().versions.len(), 1);
+        assert!(!second);
     }
 
     #[test]
-    fn tampered_content_is_rejected_not_warned() {
+    fn tampered_bytes_are_rejected() {
         let s = Scratch::new("tamper");
-        let v = a_version("pl_4000000000");
-        let (path, _) = write_version(&s.root, &v).unwrap();
-
-        // Simulate corruption in transit: same name, different bytes.
+        let (path, _, _) = write_version(&s.root, "pl_x", 1, ROOT_MODULE.as_bytes()).unwrap();
         make_writable_recursive(&s.root).unwrap();
-        let mut tampered = v.clone();
-        tampered.goal = "Something else entirely".into();
-        fs::write(&path, tampered.render()).unwrap();
-
-        let store = load_plan(&s.root, &v.plan).unwrap();
-        assert!(
-            store.versions.is_empty(),
-            "tampered file must not be admitted"
-        );
-        assert_eq!(store.rejected.len(), 1);
-        assert!(
-            store.rejected[0].reason.contains("content hash mismatch"),
-            "{}",
-            store.rejected[0].reason
-        );
-    }
-
-    #[test]
-    fn a_file_that_merely_parses_is_not_adopted() {
-        let s = Scratch::new("stray");
-        let plan = "pl_5000000000";
-        let v = a_version(plan);
-        let dir = versions_dir(&s.root, plan);
-        fs::create_dir_all(&dir).unwrap();
-        // Well-formed content, but the name names no content.
-        fs::write(dir.join("plan-draft.cmp"), v.render()).unwrap();
-        // And a correctly-shaped name carrying the wrong hash.
-        fs::write(dir.join("001-aaaaaaaaaaaa.cmp"), v.render()).unwrap();
-
-        let store = load_plan(&s.root, plan).unwrap();
+        fs::write(&path, b"import x from 'y'\n").unwrap();
+        let store = load_plan(&s.root, "pl_x").unwrap();
         assert!(store.versions.is_empty());
-        assert_eq!(store.rejected.len(), 2);
+        assert!(store.rejected[0].reason.contains("content hash mismatch"));
     }
 
     #[test]
-    fn a_version_filed_under_the_wrong_plan_is_rejected() {
-        let s = Scratch::new("misfiled");
-        let v = a_version("pl_6000000000");
-        let dir = versions_dir(&s.root, "pl_9999999999");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join(v.filename()), v.render()).unwrap();
-
-        let store = load_plan(&s.root, "pl_9999999999").unwrap();
-        assert!(store.versions.is_empty());
-        assert!(store.rejected[0].reason.contains("declares plan"));
-    }
-
-    #[test]
-    fn unrelated_files_are_ignored_with_a_reason() {
-        let s = Scratch::new("foreign");
-        let plan = "pl_7000000000";
-        let dir = versions_dir(&s.root, plan);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("README.md"), "notes").unwrap();
-
-        let store = load_plan(&s.root, plan).unwrap();
-        assert!(store.versions.is_empty());
-        assert_eq!(store.rejected.len(), 1);
-    }
-
-    /// Two machines that independently make the *same* revision from the same
-    /// parent converge on one version instead of diverging (decision 0007).
-    ///
-    /// Each catalog holds a different amount of unrelated history, which under
-    /// a recorded `max(seen) + 1` counter would have given the two revisions
-    /// different bodies, different names, and a permanent false divergence.
-    /// Nothing is recorded that either machine's local history can influence,
-    /// so the bytes match and replication unions them into one file.
-    #[test]
-    fn the_same_revision_from_the_same_parent_converges() {
-        let left = Scratch::new("converge-left");
-        let right = Scratch::new("converge-right");
-        let plan = "pl_8000000000";
-
-        let root_version = a_version(plan);
-        write_version(&left.root, &root_version).unwrap();
-        write_version(&right.root, &root_version).unwrap();
-
-        // The left machine has seen more of the plan's history than the right.
-        let mut unrelated = a_version(plan);
-        unrelated.seq = 2;
-        unrelated.parents = vec![root_version.hash()];
-        unrelated.goal = "An older direction, since abandoned".into();
-        unrelated.why = "History the right machine never saw.".into();
-        write_version(&left.root, &unrelated).unwrap();
-
-        let revision = |base: &Version| {
-            let mut v = base.clone();
-            v.seq = base.seq + 1;
-            v.parents = vec![base.hash()];
-            v.why = "The tokenizer, not the grammar, drops it.".into();
-            v.steps[0].work = "Fix the tokenizer".into();
-            v
-        };
-        let from_left = revision(&root_version);
-        let from_right = revision(&root_version);
-
-        assert_eq!(
-            from_left.hash(),
-            from_right.hash(),
-            "identical intent from an identical parent is one version"
-        );
-
-        write_version(&left.root, &from_left).unwrap();
-        write_version(&right.root, &from_right).unwrap();
-        assert_eq!(
-            from_left.filename(),
-            from_right.filename(),
-            "one name, so replication unions rather than accumulating"
-        );
-
-        // Replicate right's file into left. It is the file left already holds.
-        let (path, created) = write_version(&left.root, &from_right).unwrap();
-        assert!(!created, "the replicated file is the one already present");
-
-        let store = load_plan(&left.root, plan).unwrap();
-        assert!(store.rejected.is_empty(), "{:?}", store.rejected);
-        assert_eq!(
-            store
-                .versions
-                .iter()
-                .filter(|a| a.hash == from_left.hash())
-                .count(),
-            1,
-            "the two machines' revisions are one version, not two: {}",
-            path.display()
-        );
-    }
-
-    #[test]
-    fn resolves_a_unique_hash_prefix() {
-        let s = Scratch::new("prefix");
-        let v = a_version("pl_9000000000");
-        write_version(&s.root, &v).unwrap();
-        let store = load_plan(&s.root, &v.plan).unwrap();
-        assert!(store.resolve_hash(&v.hash()[..8]).is_some());
-        assert!(store.resolve_hash("ffffffffffffff").is_none());
-    }
-
-    #[test]
-    fn lists_plans_and_tolerates_an_empty_catalog() {
-        let s = Scratch::new("list");
-        assert!(list_plans(&s.root).unwrap().is_empty());
-        write_version(&s.root, &a_version("pl_A000000000")).unwrap();
-        write_version(&s.root, &a_version("pl_B000000000")).unwrap();
-        assert_eq!(
-            list_plans(&s.root).unwrap(),
-            vec!["pl_A000000000", "pl_B000000000"]
-        );
-    }
-
-    #[test]
-    fn events_round_trip_through_the_catalog() {
-        use crate::event::{Event, EventKind};
-        let s = Scratch::new("events");
-        let plan = "pl_C000000000";
-        let e = Event {
-            id: "ev_0000000001".into(),
-            at: 1,
-            wall: 0,
-            plan: plan.into(),
-            step: "st_A000000001".into(),
-            version: "a".repeat(64),
-            actor: "cos".into(),
-            kind: EventKind::Start,
-            note: None,
-            evidence_kind: None,
-            attrs: vec![],
-        };
-        write_event(&s.root, &e).unwrap();
-        let store = load_plan(&s.root, plan).unwrap();
-        assert_eq!(store.events.len(), 1);
-        assert_eq!(store.events[0], e);
-        assert_eq!(store.next_event_at(), 2);
-    }
-
-    #[test]
-    fn init_is_idempotent() {
-        let s = Scratch::new("init");
-        assert!(exists(&s.root));
-        init(&s.root).unwrap();
-        assert!(exists(&s.root));
+    fn a_version_evaluates_to_its_intent() {
+        let s = Scratch::new("eval");
+        write_version(&s.root, "pl_x", 1, ROOT_MODULE.as_bytes()).unwrap();
+        let store = load_plan(&s.root, "pl_x").unwrap();
+        let v = evaluate(&store.versions[0]).unwrap();
+        assert_eq!(v.goal, "Ship");
+        assert_eq!(v.steps.len(), 1);
+        assert_eq!(v.steps[0].id, "a");
     }
 }

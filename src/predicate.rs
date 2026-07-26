@@ -115,6 +115,58 @@ impl Evidence {
 }
 
 impl Pred {
+    /// Detect a criterion that contradicts itself, refused when written
+    /// (decision 0013). This is the strictly-smaller, always-keepable claim: a
+    /// syntactic contradiction — the same positive atom required and negated
+    /// within one conjunction — never whether a criterion *can* be satisfied,
+    /// which is undecidable here. Returns the offending atom's rendering.
+    pub fn self_contradiction(&self) -> Option<String> {
+        match self {
+            Pred::All(ps) => {
+                // Positive atoms and directly-negated atoms in this conjunction,
+                // compared by canonical rendering.
+                let mut positives: Vec<String> = Vec::new();
+                let mut negatives: Vec<String> = Vec::new();
+                for p in ps {
+                    match p {
+                        Pred::Atom { .. } => positives.push(p.to_string()),
+                        Pred::Not(inner) => negatives.push(inner.to_string()),
+                        _ => {}
+                    }
+                }
+                for pos in &positives {
+                    if negatives.contains(pos) {
+                        return Some(pos.clone());
+                    }
+                }
+                // Recurse: a nested conjunction can contradict itself too.
+                ps.iter().find_map(|p| p.self_contradiction())
+            }
+            Pred::Any(ps) => ps.iter().find_map(|p| p.self_contradiction()),
+            Pred::Not(p) => p.self_contradiction(),
+            Pred::Atom { .. } => None,
+        }
+    }
+
+    /// The positive (non-negated) atoms reachable in this predicate, as
+    /// `(kind, attrs)`. Negated atoms are excluded: a negated criterion is an
+    /// outcome to report, not a domain to correct against (decision 0013).
+    fn positive_atoms<'a>(&'a self, negated: bool, out: &mut Vec<&'a Pred>) {
+        match self {
+            Pred::Atom { .. } => {
+                if !negated {
+                    out.push(self);
+                }
+            }
+            Pred::All(ps) | Pred::Any(ps) => {
+                for p in ps {
+                    p.positive_atoms(negated, out);
+                }
+            }
+            Pred::Not(p) => p.positive_atoms(!negated, out),
+        }
+    }
+
     /// Whether this predicate holds against the recorded evidence.
     pub fn eval(&self, evidence: &[Evidence]) -> bool {
         match self {
@@ -158,6 +210,58 @@ impl Pred {
             Pred::Not(inner) => format!("evidence matching {inner} is present but must not be"),
         })
     }
+}
+
+/// Cross-check an evidence record against the acceptance criteria it could
+/// contribute to (decision 0013). This *reports* a likely mistake and never
+/// refuses: the derivable domain is necessarily incomplete.
+///
+/// The domain of each attribute is derived from the values the plan's own
+/// positively-stated criteria bind — the plan supplies its own enumeration
+/// without declaring one. A record carrying a value outside that domain, for a
+/// key some criterion of the same kind constrains, is reported and named. A
+/// value no criterion mentions is accepted in silence (matching is a subset
+/// relation), and a record matching a *negated* criterion is not a mistake.
+pub fn cross_check(kind: &str, attrs: &[(String, String)], criteria: &[&Pred]) -> Option<String> {
+    use std::collections::{BTreeSet, HashMap};
+
+    let mut positives: Vec<&Pred> = Vec::new();
+    for c in criteria {
+        c.positive_atoms(false, &mut positives);
+    }
+
+    // The domain each attribute takes across positive criteria of this kind.
+    let mut domain: HashMap<&str, BTreeSet<&str>> = HashMap::new();
+    let mut mentions_kind = false;
+    for p in &positives {
+        if let Pred::Atom { kind: k, attrs: a } = p {
+            if k == kind {
+                mentions_kind = true;
+                for (ak, av) in a {
+                    domain.entry(ak.as_str()).or_default().insert(av.as_str());
+                }
+            }
+        }
+    }
+    if !mentions_kind {
+        // No criterion names this evidence kind; the record simply adds context.
+        return None;
+    }
+
+    for (k, v) in attrs {
+        if let Some(values) = domain.get(k.as_str()) {
+            if !values.contains(v.as_str()) {
+                let expected: Vec<&str> = values.iter().copied().collect();
+                return Some(format!(
+                    "recorded {kind}({k}={v}), but no acceptance criterion expects that: \
+                     the plan's criteria bind `{k}` to {{{}}}. If you meant one of those, the \
+                     record will not satisfy the criterion as written.",
+                    expected.join(", ")
+                ));
+            }
+        }
+    }
+    None
 }
 
 impl fmt::Display for Pred {
