@@ -14,6 +14,7 @@ pub mod change;
 pub mod cli;
 pub mod cmd;
 pub mod convergence;
+pub mod eval;
 pub mod event;
 pub mod json;
 pub mod model;
