@@ -60,17 +60,20 @@ missing while a plan is rewritten.
 ```ts
 import prior from "./001-9f3c1ae4.ts"
 
+// An added Step is a named binding too, for the same reason a first-version Step
+// is: its name is its identity, and a later version refers to it by that name. An
+// anonymous `step({...})` in `add` has no identity and is refused.
+export const tripleCase = step({
+  work: "Add a regression case for triple nesting",
+  dependsOn: [prior.steps.fix],
+  accept: evidence.test({ name: "parser::triple", status: "pass" }),
+})
+
 export default prior.revise({
   author: "cos",
   why: "Reproduction retargeted the fix at the tokenizer, not the grammar.",
   edit: [prior.steps.fix.with({ work: "Fix the tokenizer's delimiter handling" })],
-  add: [
-    step({
-      work: "Add a regression case for triple nesting",
-      dependsOn: [prior.steps.fix],
-      accept: evidence.test({ name: "parser::triple", status: "pass" }),
-    }),
-  ],
+  add: [tripleCase],
   retire: [prior.steps.someObsoleteStep],
 })
 ```
@@ -78,7 +81,10 @@ export default prior.revise({
 `prior.steps.fix` refers to the carried-forward Step through the predecessor, so
 an edit cannot target a Step that is not there or invent a new one. `.with(...)`
 changes work, acceptance, or dependencies; it cannot change identity, because
-identity is the binding and the binding is unchanged.
+identity is the binding and the binding is unchanged. An *added* Step is declared
+the same way a first-version Step is — a named export — because it acquires
+identity by the same rule, and a successor that carries it forward refers to it
+by that name.
 
 `retire` marks a Step decommissioned. It is carried forward like any other Step,
 retired, because retirement is content and a revision could not omit it in any

@@ -221,7 +221,7 @@ fn eval_one(
     let plan = default
         .as_object()
         .ok_or_else(|| EvalError::Failed(format!("{name}: default export is not a plan object")))?;
-    extract_plan(ctx, plan, name)
+    extract_plan(plan, name)
 }
 
 /// Drive `Module::import` to completion, translating its failure modes.
@@ -260,7 +260,7 @@ fn classify(ctx: &Ctx<'_>, err: JsError, interrupted: &Arc<AtomicBool>) -> EvalE
 // Extraction: evaluated JS values -> owned Rust
 // ---------------------------------------------------------------------------
 
-fn extract_plan(ctx: &Ctx<'_>, plan: &Object<'_>, name: &str) -> Result<SemVersion, EvalError> {
+fn extract_plan(plan: &Object<'_>, name: &str) -> Result<SemVersion, EvalError> {
     let fail = |m: String| EvalError::Failed(format!("{name}: {m}"));
     let author = get_string(plan, "author").ok_or_else(|| fail("plan has no author".into()))?;
     let why = get_string(plan, "why").ok_or_else(|| fail("plan has no rationale (why)".into()))?;
@@ -280,7 +280,7 @@ fn extract_plan(ctx: &Ctx<'_>, plan: &Object<'_>, name: &str) -> Result<SemVersi
         let sobj = item
             .as_object()
             .ok_or_else(|| fail("a step is not an object".into()))?;
-        steps.push(extract_step(ctx, sobj, name)?);
+        steps.push(extract_step(sobj, name)?);
     }
 
     Ok(SemVersion {
@@ -292,7 +292,7 @@ fn extract_plan(ctx: &Ctx<'_>, plan: &Object<'_>, name: &str) -> Result<SemVersi
     })
 }
 
-fn extract_step(ctx: &Ctx<'_>, s: &Object<'_>, module: &str) -> Result<SemStep, EvalError> {
+fn extract_step(s: &Object<'_>, module: &str) -> Result<SemStep, EvalError> {
     let fail = |m: String| EvalError::Failed(format!("{module}: {m}"));
     let name = get_string(s, "__name").ok_or_else(|| {
         fail(
@@ -335,7 +335,7 @@ fn extract_step(ctx: &Ctx<'_>, s: &Object<'_>, module: &str) -> Result<SemStep, 
     let accept_val: Value = s
         .get("accept")
         .map_err(|_| fail(format!("step {name} has no acceptance criterion")))?;
-    let accept = to_pred(ctx, &accept_val).map_err(|m| fail(format!("step {name}: {m}")))?;
+    let accept = to_pred(&accept_val).map_err(|m| fail(format!("step {name}: {m}")))?;
 
     let retired = s.get::<_, bool>("retired").unwrap_or(false);
 
@@ -350,7 +350,7 @@ fn extract_step(ctx: &Ctx<'_>, s: &Object<'_>, module: &str) -> Result<SemStep, 
 }
 
 /// Convert an evidence tree (`atom` / `all` / `any` / `not`) to a [`Pred`].
-fn to_pred(ctx: &Ctx<'_>, v: &Value<'_>) -> Result<Pred, String> {
+fn to_pred(v: &Value<'_>) -> Result<Pred, String> {
     let obj = v
         .as_object()
         .ok_or_else(|| "an acceptance criterion must be an evidence value".to_string())?;
@@ -380,7 +380,7 @@ fn to_pred(ctx: &Ctx<'_>, v: &Value<'_>) -> Result<Pred, String> {
             let mut ps = Vec::new();
             for a in arr.iter::<Value>() {
                 let a = a.map_err(|e| e.to_string())?;
-                ps.push(to_pred(ctx, &a)?);
+                ps.push(to_pred(&a)?);
             }
             Ok(if kind == "all" {
                 Pred::All(ps)
@@ -390,7 +390,7 @@ fn to_pred(ctx: &Ctx<'_>, v: &Value<'_>) -> Result<Pred, String> {
         }
         "not" => {
             let inner: Value = obj.get("arg").map_err(|e| e.to_string())?;
-            Ok(Pred::Not(Box::new(to_pred(ctx, &inner)?)))
+            Ok(Pred::Not(Box::new(to_pred(&inner)?)))
         }
         other => Err(format!("unknown evidence combinator `{other}`")),
     }
@@ -587,8 +587,13 @@ fn resolve_spec(base: &Path, spec: &str) -> Result<Resolved, EvalError> {
     }
     let dir = base.parent().unwrap_or_else(|| Path::new("."));
     let joined = dir.join(spec);
-    let canon = canonicalize(&joined)?;
-    Ok(Resolved::File(canon))
+    // Resolution must succeed even when the file is absent, so that the loader
+    // is invoked and reports it as Unresolved (a predecessor that has not
+    // arrived) rather than the resolver failing it as a generic module error.
+    match std::fs::canonicalize(&joined) {
+        Ok(canon) => Ok(Resolved::File(canon)),
+        Err(_) => Ok(Resolved::File(joined)),
+    }
 }
 
 fn canonicalize(path: &Path) -> Result<PathBuf, EvalError> {

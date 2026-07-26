@@ -323,10 +323,11 @@ fn cmd_commit(root: &Path, path: &Path, plan_opt: Option<&str>) -> Result<Output
     if parent_admitted.len() == 1 {
         if let Ok(pv) = evaluate(parent_admitted[0]) {
             if version.changes_nothing_from(&pv) {
-                return Err(format!(
+                return Err(
                     "this changes nothing: a revision must alter a step or the goal \
                      (CMP.DM-R07b); nothing was recorded"
-                ));
+                        .to_string(),
+                );
             }
         }
     }
