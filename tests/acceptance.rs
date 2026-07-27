@@ -326,6 +326,277 @@ fn a_nonterminating_plan_is_stopped_not_awaited() {
     assert_eq!(eval::eval_plan_file(&p).unwrap_err().kind(), "stopped");
 }
 
+/// Write `source` as an admitted (content-addressed, hash-named) version file
+/// and return its filename, so a sibling or cross-plan import can reference it.
+fn admit(root: &Path, plan: &str, seq: u64, source: &str) -> String {
+    let (p, _hash, _created) = catalog::write_version(root, plan, seq, source.as_bytes()).unwrap();
+    p.file_name().unwrap().to_str().unwrap().to_string()
+}
+
+// ---- Fix 1: the module resolver admits only legitimate modules ----
+
+#[test]
+fn imports_are_restricted_to_legitimate_modules() {
+    let root = std::env::temp_dir().join(format!("compass-imports-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    let plan = "pl_imp";
+    let vdir = catalog::versions_dir(&root, plan);
+    std::fs::create_dir_all(&vdir).unwrap();
+
+    // A legitimate root version, admitted so a sibling import can resolve it.
+    let root_src = r#"import { plan, step, evidence } from "compass"
+export const a = step({ work: "do a", accept: evidence.test({ status: "pass" }) })
+export default plan({ author: "cos", goal: "g", why: "w", steps: [a] })
+"#;
+    let v1 = admit(&root, plan, 1, root_src);
+
+    // (a) an absolute-path import is refused at eval as illegitimate. The import
+    // is used (`String(_x)`) so the TypeScript transpiler does not elide it.
+    let abs = tmp_module(
+        &vdir,
+        "draft_abs.ts",
+        "import { plan, step, evidence } from \"compass\"\nimport _x from \"/etc/passwd\"\nexport const a = step({ work: \"x\", accept: evidence.test({ status: \"pass\" }) })\nexport default plan({ author: \"cos\", goal: \"g\", why: String(_x), steps: [a] })\n",
+    );
+    let e = eval::eval_plan_file(&abs).unwrap_err();
+    assert_eq!(e.kind(), "failed", "{}", e.message());
+    assert!(
+        e.message().contains("illegitimate import"),
+        "absolute import must be refused: {}",
+        e.message()
+    );
+
+    // (b) a relative path that escapes the catalog is refused, even when its
+    // basename is content-addressed.
+    let outside = tmp_module(
+        &vdir,
+        "draft_out.ts",
+        "import { plan, step, evidence } from \"compass\"\nimport _x from \"../../../../000-000000000000.ts\"\nexport const a = step({ work: \"x\", accept: evidence.test({ status: \"pass\" }) })\nexport default plan({ author: \"cos\", goal: \"g\", why: String(_x), steps: [a] })\n",
+    );
+    let e = eval::eval_plan_file(&outside).unwrap_err();
+    assert_eq!(e.kind(), "failed", "{}", e.message());
+    assert!(
+        e.message().contains("illegitimate import"),
+        "an escaping import must be refused: {}",
+        e.message()
+    );
+
+    // (c) a legitimate same-plan sibling import resolves and evaluates.
+    let rev_src = format!(
+        r#"import prior from "./{v1}"
+export default prior.revise({{ author: "cos", why: "reword", edit: [prior.steps.a.with({{ work: "do a, better" }})] }})
+"#
+    );
+    let good = tmp_module(&vdir, "draft_good.ts", &rev_src);
+    let map = eval::eval_plan_file(&good).unwrap_or_else(|e| {
+        panic!(
+            "valid sibling import must resolve: [{}] {}",
+            e.kind(),
+            e.message()
+        )
+    });
+    let v = map.get(&std::fs::canonicalize(&good).unwrap()).unwrap();
+    assert_eq!(
+        v.steps.iter().find(|s| s.name == "a").unwrap().work,
+        "do a, better"
+    );
+}
+
+// ---- Fix 2: a cross-plan reference commits and is not a predecessor ----
+
+#[test]
+fn a_cross_plan_reference_is_not_a_predecessor() {
+    let root = std::env::temp_dir().join(format!("compass-xplan-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    catalog::init(&root).unwrap();
+
+    // The other plan, with an admitted version.
+    let dep_src = r#"import { plan, step, evidence } from "compass"
+export const seed = step({ work: "Seed work", accept: evidence.test({ status: "pass" }) })
+export default plan({ author: "cos", goal: "dep", why: "the referenced plan", steps: [seed] })
+"#;
+    let dep_v1 = admit(&root, "pl_dep", 1, dep_src);
+
+    // A first version of pl_main that references pl_dep's version cross-plan.
+    // The reference is real (it reads a value from the other plan's version) but
+    // is not a predecessor: this commit has no parent.
+    let main_src = format!(
+        r#"import {{ plan, step, evidence }} from "compass"
+import dep from "../../pl_dep/versions/{dep_v1}"
+export const local = step({{ work: "Local, mirrors " + dep.steps.seed.work, accept: evidence.test({{ status: "pass" }}) }})
+export default plan({{ author: "cos", goal: "main", why: "references pl_dep cross-plan", steps: [local] }})
+"#
+    );
+    let vdir = catalog::versions_dir(&root, "pl_main");
+    std::fs::create_dir_all(&vdir).unwrap();
+    let draft = vdir.join("draft.ts");
+    std::fs::write(&draft, &main_src).unwrap();
+
+    let out = run(
+        &root,
+        Command::Commit {
+            path: draft.clone(),
+            plan: Some("pl_main".into()),
+        },
+    )
+    .unwrap_or_else(|e| panic!("cross-plan commit must succeed, not be rejected: {e}"));
+    assert_eq!(out.code, 0, "{}", out.text);
+    assert!(
+        out.text.contains("created"),
+        "a cross-plan reference has no predecessor, so this is a creation: {}",
+        out.text
+    );
+
+    // The committed version records no parent, and is not an orphan.
+    let store = catalog::load_plan(&root, "pl_main").unwrap();
+    assert_eq!(store.versions.len(), 1, "rejected: {:?}", store.rejected);
+    assert!(
+        store.versions[0].parents.is_empty(),
+        "a cross-plan reference must not be a parent: {:?}",
+        store.versions[0].parents
+    );
+    let an = chain::analyze(&store);
+    assert!(
+        !an.is_orphan(&store.versions[0].hash),
+        "a cross-plan-referencing version must not read as an orphan"
+    );
+}
+
+// ---- Fix 3: reconciliation refuses silent divergent-step loss ----
+
+#[test]
+fn reconciliation_refuses_divergent_same_step_without_an_explicit_edit() {
+    let root = std::env::temp_dir().join(format!("compass-recon-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    let plan = "pl_rec";
+    let vdir = catalog::versions_dir(&root, plan);
+    std::fs::create_dir_all(&vdir).unwrap();
+
+    let v1_src = r#"import { plan, step, evidence } from "compass"
+export const build = step({ work: "Build", accept: evidence.test({ status: "pass" }) })
+export const ship = step({ work: "Ship", accept: evidence.test({ status: "pass" }) })
+export default plan({ author: "cos", goal: "g", why: "w", steps: [build, ship] })
+"#;
+    let v1 = admit(&root, plan, 1, v1_src);
+
+    // Two sides that edit the SAME step differently.
+    let side_a = admit(
+        &root,
+        plan,
+        2,
+        &format!(
+            r#"import prior from "./{v1}"
+export default prior.revise({{ author: "cos", why: "carefully", edit: [prior.steps.build.with({{ work: "Build carefully" }})] }})
+"#
+        ),
+    );
+    let side_b = admit(
+        &root,
+        plan,
+        2,
+        &format!(
+            r#"import prior from "./{v1}"
+export default prior.revise({{ author: "dev", why: "quickly", edit: [prior.steps.build.with({{ work: "Build quickly" }})] }})
+"#
+        ),
+    );
+
+    // Without an explicit edit, the divergent `build` is a refused conflict.
+    let bad = tmp_module(
+        &vdir,
+        "recon_bad.ts",
+        &format!(
+            r#"import {{ reconcile }} from "compass"
+import sa from "./{side_a}"
+import sb from "./{side_b}"
+export default reconcile({{ revises: [sa, sb], author: "cos", why: "merge" }})
+"#
+        ),
+    );
+    let e = eval::eval_plan_file(&bad).unwrap_err();
+    assert_eq!(e.kind(), "failed", "{}", e.message());
+    assert!(
+        e.message().contains("reconciliation conflict") && e.message().contains("build"),
+        "the refusal must name the conflicting step: {}",
+        e.message()
+    );
+
+    // With an explicit edit stating the surviving intent, it succeeds.
+    let good = tmp_module(
+        &vdir,
+        "recon_good.ts",
+        &format!(
+            r#"import {{ reconcile }} from "compass"
+import sa from "./{side_a}"
+import sb from "./{side_b}"
+export default reconcile({{ revises: [sa, sb], author: "cos", why: "merge", edit: [sa.steps.build.with({{ work: "Build carefully and quickly" }})] }})
+"#
+        ),
+    );
+    let map = eval::eval_plan_file(&good).unwrap_or_else(|e| {
+        panic!(
+            "an explicit edit must resolve the conflict: {}",
+            e.message()
+        )
+    });
+    let v = map.get(&std::fs::canonicalize(&good).unwrap()).unwrap();
+    assert_eq!(
+        v.steps.iter().find(|s| s.name == "build").unwrap().work,
+        "Build carefully and quickly"
+    );
+
+    // A reconciliation whose sides diverge only by ADDING different steps (no
+    // shared step disagrees) is not a conflict and still works.
+    let add_a = admit(
+        &root,
+        plan,
+        2,
+        &format!(
+            r#"import {{ step, evidence }} from "compass"
+import prior from "./{v1}"
+export const fuzz = step({{ work: "Fuzz", dependsOn: [prior.steps.build], accept: evidence.test({{ status: "pass" }}) }})
+export default prior.revise({{ author: "cos", why: "add fuzz", add: [fuzz] }})
+"#
+        ),
+    );
+    let add_b = admit(
+        &root,
+        plan,
+        2,
+        &format!(
+            r#"import {{ step, evidence }} from "compass"
+import prior from "./{v1}"
+export const doc = step({{ work: "Doc", dependsOn: [prior.steps.build], accept: evidence.test({{ status: "pass" }}) }})
+export default prior.revise({{ author: "dev", why: "add doc", add: [doc] }})
+"#
+        ),
+    );
+    let ok = tmp_module(
+        &vdir,
+        "recon_ok.ts",
+        &format!(
+            r#"import {{ reconcile }} from "compass"
+import sa from "./{add_a}"
+import sb from "./{add_b}"
+export default reconcile({{ revises: [sa, sb], author: "cos", why: "both are worth keeping" }})
+"#
+        ),
+    );
+    let map = eval::eval_plan_file(&ok)
+        .unwrap_or_else(|e| panic!("a non-conflicting reconcile must work: {}", e.message()));
+    let v = map.get(&std::fs::canonicalize(&ok).unwrap()).unwrap();
+    let names: Vec<&str> = v.steps.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"build")
+            && names.contains(&"ship")
+            && names.contains(&"fuzz")
+            && names.contains(&"doc"),
+        "{names:?}"
+    );
+}
+
 #[test]
 fn the_sandbox_grants_no_dynamic_code_or_clock() {
     let root = std::env::temp_dir().join(format!("compass-sandbox-{}", std::process::id()));
