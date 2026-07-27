@@ -1,3 +1,6 @@
 /target
 # prototype scratch catalogs
 /tmp
+
+# nix build output symlink (store path; never commit)
+/result
