@@ -296,7 +296,7 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
 
     // A Plan's identity is derived from its origin (decision 0017): the operator
     // names nothing. An origin is its own PlanId; a revision inherits its Plan
-    // from the predecessor it descends from.
+    // from the parent it descends from.
     let plan = catalog::derive_planid(path, &source)?;
 
     // Evaluate the authored module (imports resolve at its location).
@@ -315,11 +315,11 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
         .ok_or_else(|| "the module did not export a plan".to_string())?;
 
     // Classify each version import (CMP.API-R05). An import of a version of the
-    // SAME plan is a predecessor, resolved against this plan's store and made a
+    // SAME plan is a parent, resolved against this plan's store and made a
     // parent of the new version. An import of ANOTHER plan's version is a
     // cross-plan reference: it must resolve against that plan's store (the other
-    // version must be admitted), but it is not a predecessor and does not make
-    // this commit "have an uncommitted predecessor".
+    // version must be admitted), but it is not a parent and does not make
+    // this commit "have an uncommitted parent".
     let store = catalog::load_plan(root, &plan)?;
     let mut parents: Vec<String> = Vec::new();
     for spec in crate::eval::import_specifiers(&source_str, path)
@@ -331,7 +331,7 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
         };
         // A target plan that differs from the current one is a cross-plan
         // reference; anything else (a sibling, or a version of this same plan)
-        // is a predecessor.
+        // is a parent.
         match crate::eval::import_target_plan(path, &spec) {
             Some(other) if other != plan => {
                 let other_store = catalog::load_plan(root, &other)?;
@@ -346,7 +346,7 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
                 Some(a) => parents.push(a.hash.clone()),
                 None => {
                     return Err(format!(
-                        "predecessor {prefix} is not committed in {plan}; nothing was recorded"
+                        "parent {prefix} is not committed in {plan}; nothing was recorded"
                     ))
                 }
             },
@@ -388,7 +388,7 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
         );
         return Ok(Output::ok(
             text,
-            receipt_json("already-committed", &plan, &hash, seq, &parents),
+            commit_result_json("already-committed", &plan, &hash, seq, &parents),
         ));
     }
 
@@ -434,11 +434,11 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
     );
     Ok(Output::ok(
         text,
-        receipt_json(kind, &plan, &hash, seq, &parents),
+        commit_result_json(kind, &plan, &hash, seq, &parents),
     ))
 }
 
-fn receipt_json(kind: &str, plan: &str, hash: &str, seq: u64, parents: &[String]) -> Json {
+fn commit_result_json(kind: &str, plan: &str, hash: &str, seq: u64, parents: &[String]) -> Json {
     Json::obj(vec![
         ("command", Json::str("commit")),
         ("result", Json::str(kind)),
@@ -570,7 +570,7 @@ fn divergence_report(an: &Analysis) -> String {
     let mut out = String::new();
     for o in &an.orphans {
         out.push_str(&format!(
-            "{} {} is an orphan: predecessor {} has not arrived — wait\n",
+            "{} {} is an orphan: parent {} has not arrived — wait\n",
             style::warning(),
             style::short(&o.version.hash),
             o.missing
@@ -582,7 +582,7 @@ fn divergence_report(an: &Analysis) -> String {
     }
     for d in an.open_divergences() {
         out.push_str(&format!(
-            "{} open divergence: {} head members share a predecessor — reconcile by authoring \
+            "{} open divergence: {} head members share a parent — reconcile by authoring \
              a version importing both\n",
             style::warning(),
             d.children.len()
@@ -852,7 +852,7 @@ fn cmd_verify(root: &Path, plan: Option<&str>, all: bool) -> Result<Output, Stri
         for o in &an.orphans {
             clean = false;
             let reason = format!(
-                "predecessor {} not present",
+                "parent {} not present",
                 o.missing
                     .iter()
                     .map(|m| style::short(m))
@@ -949,7 +949,7 @@ fn cmd_repair(root: &Path, plan: &str) -> Result<Output, String> {
         ));
     }
 
-    // Identify the last intact predecessor to continue from.
+    // Identify the last intact parent to continue from.
     let intact: Vec<&Admitted> = store
         .versions
         .iter()
@@ -973,7 +973,7 @@ fn cmd_repair(root: &Path, plan: &str) -> Result<Output, String> {
         Some(b) => {
             let rel = crate::model::filename_for(b.seq, &b.hash);
             text.push_str(&format!(
-                "\nAuthor a damage-recording version continuing from the last intact predecessor \
+                "\nAuthor a damage-recording version continuing from the last intact parent \
                  ({}):\n\n  import prior from \"./{}\"\n  export default prior.revise({{\n    \
                  author: \"you\",\n    why: \"Records the damage to <hash> and continues.\",\n  \
                  }})\n\nthen `compass commit` it. Verification stays read-only.\n",
@@ -983,7 +983,7 @@ fn cmd_repair(root: &Path, plan: &str) -> Result<Output, String> {
         }
         None => {
             text.push_str(
-                "\nNo intact predecessor remains; author a fresh plan recording what is known \
+                "\nNo intact parent remains; author a fresh plan recording what is known \
                  of the lost intent.\n",
             );
         }

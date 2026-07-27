@@ -15,10 +15,10 @@
 //! an error, never a warning.
 //!
 //! The identity is the hash of the raw bytes as they sit on disk. Because each
-//! version imports its predecessors by filename, and each filename carries a
+//! version imports its parents by filename, and each filename carries a
 //! hash of content, the lineage is walkable from the bytes alone: the parents of
 //! a version are the versions whose hash-prefix appears in its import
-//! specifiers. A prefix that resolves to no local file is a missing predecessor
+//! specifiers. A prefix that resolves to no local file is a missing parent
 //! (an orphan), repaired by waiting.
 
 use crate::event::Event;
@@ -34,9 +34,9 @@ pub struct Admitted {
     pub hash: String,
     pub path: PathBuf,
     pub plan: String,
-    /// A reading aid: one past the longest predecessor. Never a key.
+    /// A reading aid: one past the longest parent. Never a key.
     pub seq: u64,
-    /// Predecessor references: a full hash when the predecessor is present, or
+    /// Parent references: a full hash when the parent is present, or
     /// the raw 12-hex prefix when it has not arrived (an orphan edge).
     pub parents: Vec<String>,
 }
@@ -186,7 +186,7 @@ pub fn load_plan(root: &Path, plan: &str) -> Result<PlanStore, String> {
         }
     }
 
-    // Resolve import-prefixes to full predecessor hashes among the siblings.
+    // Resolve import-prefixes to full parent hashes among the siblings.
     let by_prefix: std::collections::HashMap<&str, &str> = raws
         .iter()
         .map(|r| (&r.hash[..crate::model::HASH_PREFIX_LEN], r.hash.as_str()))
@@ -290,7 +290,7 @@ fn admit_version(path: &Path, expected_plan: &str) -> Result<Raw, String> {
     }
 
     let source = std::str::from_utf8(&bytes).map_err(|e| format!("not valid UTF-8: {e}"))?;
-    let import_prefixes = predecessor_prefixes(source, path, expected_plan)?;
+    let import_prefixes = parent_prefixes(source, path, expected_plan)?;
 
     Ok(Raw {
         hash: actual,
@@ -301,23 +301,19 @@ fn admit_version(path: &Path, expected_plan: &str) -> Result<Raw, String> {
     })
 }
 
-/// The hash-prefixes of the *predecessor* version files a module imports, read
-/// statically. A predecessor is a version of the SAME plan; a version of another
+/// The hash-prefixes of the *parent* version files a module imports, read
+/// statically. A parent is a version of the SAME plan; a version of another
 /// plan is a cross-plan reference (CMP.API-R05), not a parent, and is excluded
-/// from the lineage so it never shows as an orphan predecessor edge.
-fn predecessor_prefixes(
-    source: &str,
-    path: &Path,
-    expected_plan: &str,
-) -> Result<Vec<String>, String> {
+/// from the lineage so it never shows as an orphan parent edge.
+fn parent_prefixes(source: &str, path: &Path, expected_plan: &str) -> Result<Vec<String>, String> {
     let specs = crate::eval::import_specifiers(source, path)
         .map_err(|e| format!("cannot read imports: {}", e.message()))?;
     let mut out = Vec::new();
     for spec in specs {
-        // A predecessor import is a relative path to a version file.
+        // A parent import is a relative path to a version file.
         let file = spec.rsplit('/').next().unwrap_or(&spec);
         if let Some((_seq, prefix)) = parse_filename(file) {
-            // Only a same-plan version is a predecessor. A cross-plan reference
+            // Only a same-plan version is a parent. A cross-plan reference
             // (target plan differs) is not part of this plan's lineage.
             match crate::eval::import_target_plan(path, &spec) {
                 Some(other) if other != expected_plan => continue,
@@ -335,8 +331,8 @@ fn predecessor_prefixes(
 /// rejected — never reinterpreted into the Plan it was filed under — on the same
 /// terms as a version whose content hash disagrees with its own filename.
 ///
-/// The origin is derived by walking resolved predecessor pointers within the
-/// store (no evaluation, no extra IO) to the predecessor-less ancestor. When the
+/// The origin is derived by walking resolved parent pointers within the
+/// store (no evaluation, no extra IO) to the parent-less ancestor. When the
 /// walk reaches an ancestor that is absent locally the version is an orphan, not
 /// a misfiling: its Plan cannot yet be confirmed, so it is left alone.
 fn reject_misfiled(store: &mut PlanStore, plan: &str) {
@@ -388,27 +384,27 @@ fn reject_misfiled(store: &mut PlanStore, plan: &str) {
 /// Derive a version's PlanId from its authored bytes (decision 0017).
 ///
 /// A Plan's identity is the content hash of its origin — the single
-/// predecessor-less version. An origin (a module that imports no predecessor) is
+/// parent-less version. An origin (a module that imports no parent) is
 /// its own PlanId: the hash of its bytes, the same hash its version filename
-/// carries. A revision inherits its Plan from its predecessor: its origin is
-/// found by walking the predecessor imports back to the predecessor-less version,
+/// carries. A revision inherits its Plan from its parent: its origin is
+/// found by walking the parent imports back to the parent-less version,
 /// and hashing that. The operator names nothing; identity is derived, and the
 /// prefix width matches the version filenames' for consistency.
 pub fn derive_planid(path: &Path, source: &[u8]) -> Result<String, String> {
     let src = std::str::from_utf8(source)
         .map_err(|e| format!("{}: not valid UTF-8: {e}", path.display()))?;
-    let origin_bytes = match sibling_predecessor_paths(path, src)?.into_iter().next() {
+    let origin_bytes = match sibling_parent_paths(path, src)?.into_iter().next() {
         None => source.to_vec(),
         Some(pred) => walk_to_origin(&pred)?,
     };
     Ok(crate::sha256::sha256_hex(&origin_bytes)[..crate::model::HASH_PREFIX_LEN].to_string())
 }
 
-/// The resolved paths of the *predecessor* version files a module imports — the
+/// The resolved paths of the *parent* version files a module imports — the
 /// same-plan siblings, sitting in the importer's own directory. A cross-plan
-/// reference resolves elsewhere and is not a predecessor, so it is excluded, as
+/// reference resolves elsewhere and is not a parent, so it is excluded, as
 /// is the `compass` prelude (which is not a version reference).
-fn sibling_predecessor_paths(path: &Path, source: &str) -> Result<Vec<PathBuf>, String> {
+fn sibling_parent_paths(path: &Path, source: &str) -> Result<Vec<PathBuf>, String> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let specs = crate::eval::import_specifiers(source, path)
         .map_err(|e| format!("cannot read imports: {}", e.message()))?;
@@ -427,28 +423,26 @@ fn sibling_predecessor_paths(path: &Path, source: &str) -> Result<Vec<PathBuf>, 
     Ok(out)
 }
 
-/// Walk a predecessor chain to its origin and return the origin's raw bytes.
-/// Any predecessor of a version shares that version's origin, so following one
-/// predecessor at each step suffices.
+/// Walk a parent chain to its origin and return the origin's raw bytes.
+/// Any parent of a version shares that version's origin, so following one
+/// parent at each step suffices.
 fn walk_to_origin(pred: &Path) -> Result<Vec<u8>, String> {
     let mut current = pred.to_path_buf();
     let mut seen = std::collections::HashSet::new();
     loop {
         if !seen.insert(current.clone()) {
-            return Err(
-                "predecessor lineage forms a cycle; a plan's identity cannot be derived".into(),
-            );
+            return Err("parent lineage forms a cycle; a plan's identity cannot be derived".into());
         }
         let bytes = fs::read(&current).map_err(|_| {
             format!(
-                "predecessor {} has not arrived: a plan's identity is its origin, which cannot be \
+                "parent {} has not arrived: a plan's identity is its origin, which cannot be \
                  derived until the origin is present (decision 0017)",
                 current.display()
             )
         })?;
         let src = std::str::from_utf8(&bytes)
             .map_err(|e| format!("{}: not valid UTF-8: {e}", current.display()))?;
-        match sibling_predecessor_paths(&current, src)?.into_iter().next() {
+        match sibling_parent_paths(&current, src)?.into_iter().next() {
             None => return Ok(bytes),
             Some(next) => current = next,
         }

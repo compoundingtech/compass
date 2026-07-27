@@ -62,7 +62,7 @@ impl Step {
 /// An immutable snapshot of a Plan's structural intent, as evaluated.
 ///
 /// `plan`, `seq`, and `parents` are supplied by the catalog (the plan is the
-/// directory, the parents are the imported predecessor files, the seq is a
+/// directory, the parents are the imported parent files, the seq is a
 /// reading aid). Everything else is declared by the module and recovered by
 /// evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,7 @@ pub struct Version {
     pub plan: String,
     /// Position along this version's lineage. A reading aid, never a key.
     pub seq: u64,
-    /// Content hashes of each predecessor (resolved), sorted.
+    /// Content hashes of each parent (resolved), sorted.
     pub parents: Vec<String>,
     pub author: String,
     /// Required Rationale (CMP-R03).
@@ -82,7 +82,7 @@ pub struct Version {
 
 impl Version {
     /// Assemble a domain version from an evaluated module plus the catalog-side
-    /// facts (which plan, which lineage position, which predecessors).
+    /// facts (which plan, which lineage position, which parents).
     pub fn from_sem(plan: &str, seq: u64, parents: Vec<String>, sem: &SemVersion) -> Version {
         let mut parents = parents;
         parents.sort();
@@ -116,7 +116,7 @@ impl Version {
     pub fn validate(&self) -> Result<(), String> {
         // A goal is required on every version and is the Plan's human handle
         // (CMP.DM-R18, decision 0017). It is checked on the evaluated value, so a
-        // revision that inherits its predecessor's goal passes, and one that
+        // revision that inherits its parent's goal passes, and one that
         // states an empty goal is refused.
         if self.goal.trim().is_empty() {
             return Err(

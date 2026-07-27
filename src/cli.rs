@@ -328,7 +328,7 @@ compass commit <module.ts>
   - Committing content already present is a no-op success.
   - New content that revises nothing is refused, with a distinct message.
   - A module uses plan() for a first version, prior.revise({...}) for a
-    revision, or reconcile({revises:[...]}) for a reconciliation. Predecessors
+    revision, or reconcile({revises:[...]}) for a reconciliation. Parents
     are the version files it imports; the Plan is derived from the origin they
     descend from.
 "

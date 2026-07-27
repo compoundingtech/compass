@@ -202,7 +202,7 @@ export default plan({ author: "cos", goal: "Ship the widget", why: "It is time."
     .unwrap();
     assert!(again.text.contains("already committed"), "{}", again.text);
 
-    // revise — a function of the predecessor, carrying every step forward.
+    // revise — a function of the parent, carrying every step forward.
     let rev = format!(
         r#"import {{ step, evidence }} from "compass"
 import prior from "./{v1}"
@@ -219,7 +219,7 @@ export default prior.revise({{
         .text
         .contains("carefully"));
 
-    // diverge: two revisions from the same predecessor v2.
+    // diverge: two revisions from the same parent v2.
     let side_a = format!(
         r#"import {{ step, evidence }} from "compass"
 import prior from "./{v2}"
@@ -409,10 +409,10 @@ export default prior.revise({{ author: "cos", why: "reword", edit: [prior.steps.
     );
 }
 
-// ---- Fix 2: a cross-plan reference commits and is not a predecessor ----
+// ---- Fix 2: a cross-plan reference commits and is not a parent ----
 
 #[test]
-fn a_cross_plan_reference_is_not_a_predecessor() {
+fn a_cross_plan_reference_is_not_a_parent() {
     let root = std::env::temp_dir().join(format!("compass-xplan-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let _g = Tmp(root.clone());
@@ -428,7 +428,7 @@ export default plan({ author: "cos", goal: "dep", why: "the referenced plan", st
 
     // A first version of the main plan that references the dep plan's version
     // cross-plan, by its PlanRef directory. The reference is real (it reads a
-    // value from the other plan's version) but is not a predecessor: no parent.
+    // value from the other plan's version) but is not a parent: no parent.
     let main_src = format!(
         r#"import {{ plan, step, evidence }} from "compass"
 import dep from "../../{dep_plan}/versions/{dep_v1}"
@@ -436,7 +436,7 @@ export const local = step({{ work: "Local, mirrors " + dep.steps.seed.work, acce
 export default plan({{ author: "cos", goal: "main", why: "references dep cross-plan", steps: [local] }})
 "#
     );
-    // The main plan has no predecessor, so its PlanRef is its own hash — author
+    // The main plan has no parent, so its PlanRef is its own hash — author
     // the draft in that dir so the cross-plan `../../` reference resolves.
     let main_plan = planref_of(&main_src);
     let vdir = catalog::versions_dir(&root, &main_plan);
@@ -454,7 +454,7 @@ export default plan({{ author: "cos", goal: "main", why: "references dep cross-p
     assert_eq!(out.code, 0, "{}", out.text);
     assert!(
         out.text.contains("created"),
-        "a cross-plan reference has no predecessor, so this is a creation: {}",
+        "a cross-plan reference has no parent, so this is a creation: {}",
         out.text
     );
 
@@ -651,7 +651,7 @@ fn an_origin_files_under_its_own_hash_and_a_revision_shares_the_planref() {
     );
     assert!(catalog::plan_dir(&root, plan).is_dir());
 
-    // A revision, authored as a sibling of its predecessor, inherits the Plan.
+    // A revision, authored as a sibling of its parent, inherits the Plan.
     let rev = format!(
         r#"import prior from "./{v1}"
 export default prior.revise({{ author: "cos", why: "Reword.", edit: [prior.steps.build.with({{ work: "Build it, carefully" }})] }})
@@ -726,7 +726,7 @@ fn a_commit_with_an_empty_goal_is_refused() {
 export const a = step({ work: "x", accept: evidence.test({ status: "pass" }) })
 export default plan({ author: "cos", goal: "", why: "w", steps: [a] })
 "#;
-    // An origin has no predecessor import, so it may be authored anywhere.
+    // An origin has no parent import, so it may be authored anywhere.
     let draft = tmp_module(&root, "empty-goal.ts", empty_goal);
     let err = match run(&root, Command::Commit { path: draft }) {
         Ok(o) => panic!("an empty goal must be refused, got: {}", o.text),
