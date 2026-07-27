@@ -126,16 +126,18 @@ an open question (DQ08).
 
 Referring to another Plan's version is importing it. The import path reaches
 across the catalog's plan-then-versions layout, so a sibling plan is two levels
-up — pop `versions/`, then the plan segment:
+up — pop `versions/`, then the plan segment. That segment is the other Plan's
+PlanRef, its origin hash (decision 0017), not a chosen name:
 
 ```ts
-import release from "../../pl_release/versions/007-4d81f0a2.ts"
+import release from "../../4d81f0a2b3c1/versions/007-4d81f0a2b3c1.ts"
 ```
 
 The import is what makes the reference checkable rather than spelled — and it is
 why the other Plan must be present to evaluate this one. A machine that has not
-received `pl_release` cannot read this Plan at all, and reports it as Unresolved
-rather than showing an incomplete graph. The imported version is a reference,
+received that Plan (the one whose goal is "cut the release branch") cannot read
+this one at all, and reports it as Unresolved rather than showing an incomplete
+graph. The imported version is a reference,
 not a predecessor: it does not become a parent of the importing version, and its
 absence-of-admission there is an error, not an uncommitted-predecessor.
 

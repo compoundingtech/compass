@@ -12,7 +12,7 @@ A Step's identity is the name it is declared under (0012). A Plan has no such
 declaration site — it is not an export in another module — so that mechanism does
 not transfer. Minting is gone. In its absence the implementation fell back on the
 catalog directory as the Plan's handle, which makes identity a filesystem
-location: exactly what the ontology and CMP.DM-R08 forbid, and it means moving or
+location: exactly what the ontology's PlanRef definition forbids, and it means moving or
 misfiling a version silently changes which Plan it belongs to.
 
 Three candidates were on the table: a declared name, a path segment, and the
@@ -36,7 +36,7 @@ one value with two jobs and reintroduce an assertion that can be typed wrong,
 for a readability that `goal` already provides.
 
 So identity is the hash of the **origin** — the single predecessor-less version.
-It is fully derived (CMP-R10), encodes no location (CMP.DM-R08), cannot collide,
+It is fully derived (CMP-R10), encodes no location (its PlanRef ontology entry), cannot collide,
 and makes "the same Plan" a content fact: two versions belong to the same Plan
 iff they descend from the same origin. There is a clean invariant in it — the
 origin version's own identity *is* the PlanRef, since both are the hash of the
@@ -56,7 +56,7 @@ needs a ref.
 | --- | --- |
 | Origin content hash | Fully derived, collision-free, location-independent, "same Plan" is a content fact; opaque, and unavailable until the origin is committed |
 | Name declared in `plan()` | Readable and idempotent; asserts an identity that `goal` already makes readable, and can be typed wrong |
-| Catalog path segment | Simplest and matches a naive implementation; makes identity a location, which CMP.DM-R08 forbids, so a moved file changes identity |
+| Catalog path segment | Simplest and matches a naive implementation; makes identity a location, which the PlanRef ontology entry forbids, so a moved file changes identity |
 
 ## Decision
 

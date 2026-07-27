@@ -328,7 +328,7 @@ fn predecessor_prefixes(
     Ok(out)
 }
 
-/// Reject versions misfiled under the wrong Plan (decision 0017, CMP.DM-R11).
+/// Reject versions misfiled under the wrong Plan (decision 0017, CMP.DM-R17).
 ///
 /// A Plan's identity is the content hash of its origin. A version whose derived
 /// origin resolves to a PlanRef different from the directory it sits in is

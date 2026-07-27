@@ -125,14 +125,14 @@
   incidental, because without it a committed Step can be re-identified while
   every hash in the lineage stays constant. _refines: CMP-R02, CMP-R07._
 
-- **CMP.DM-R11 A Plan's identity is its origin.** A Plan is identified by the
+- **CMP.DM-R17 A Plan's identity is its origin.** A Plan is identified by the
   content hash of its origin — the one version with no predecessor. It is
   derived, never declared and never minted, and encodes no location. Two
   versions are the same Plan when they share an origin. A version whose derived
   Plan disagrees with where it is filed is rejected, not reinterpreted.
   _refines: CMP-R10, CMP-R02._
 
-- **CMP.DM-R12 A goal is required and is the human handle.** Every version
+- **CMP.DM-R18 A goal is required and is the human handle.** Every version
   states a goal, and the goal is what identifies a Plan to a person — surfaced
   wherever a Plan is listed or referenced, in place of its hash. Identity is
   derived and machine-facing; readability is the goal's job, so neither carries

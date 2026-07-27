@@ -228,7 +228,7 @@ fn cmd_start(root: &Path, goal: Option<&str>, author: &str) -> Result<Output, St
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     let draft = next_draft_path(&dir);
 
-    // A blank goal by default: the goal is required (CMP.DM-R12), so committing
+    // A blank goal by default: the goal is required (CMP.DM-R18), so committing
     // the scaffold unedited is refused — the operator must state the goal.
     let goal = goal.unwrap_or("");
     let scaffold = starter_module(goal, author);
@@ -607,7 +607,7 @@ fn cmd_history(root: &Path, plan: &str) -> Result<Output, String> {
     let mut text = String::new();
     let mut entries: Vec<Json> = Vec::new();
 
-    // The goal is the Plan's human handle (CMP.DM-R12): lead with it, addressed
+    // The goal is the Plan's human handle (CMP.DM-R18): lead with it, addressed
     // by the PlanRef and the first head's goal.
     let goal = an
         .head
@@ -782,7 +782,7 @@ fn cmd_status(root: &Path) -> Result<Output, String> {
     for plan in &plans {
         let store = catalog::load_plan(root, plan)?;
         let an = chain::analyze(&store);
-        // The goal is the human handle (CMP.DM-R12): lead with it, not the hash.
+        // The goal is the human handle (CMP.DM-R18): lead with it, not the hash.
         let goal = an
             .head
             .iter()

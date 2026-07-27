@@ -714,7 +714,7 @@ fn a_version_in_the_wrong_plan_dir_is_rejected() {
     assert_ne!(out.code, 0, "a misfiled version fails verification");
 }
 
-/// A commit whose goal is empty is refused, and nothing is recorded (CMP.DM-R12).
+/// A commit whose goal is empty is refused, and nothing is recorded (CMP.DM-R18).
 #[test]
 fn a_commit_with_an_empty_goal_is_refused() {
     let root = std::env::temp_dir().join(format!("compass-0017-goal-{}", std::process::id()));
@@ -741,7 +741,7 @@ export default plan({ author: "cos", goal: "", why: "w", steps: [a] })
 }
 
 /// `status` and `show` present a Plan by its goal, the human handle, not by its
-/// raw hash (CMP.DM-R12).
+/// raw hash (CMP.DM-R18).
 #[test]
 fn status_and_show_display_the_goal() {
     let root = std::env::temp_dir().join(format!("compass-0017-handle-{}", std::process::id()));
@@ -765,7 +765,7 @@ fn status_and_show_display_the_goal() {
 }
 
 /// `progress` and `evidence` reference the Plan by its goal (the human handle),
-/// not the raw hash — the version is still cited by hash (CMP.DM-R12).
+/// not the raw hash — the version is still cited by hash (CMP.DM-R18).
 #[test]
 fn progress_and_evidence_reference_the_plan_by_goal() {
     let root = std::env::temp_dir().join(format!("compass-0017-record-{}", std::process::id()));
