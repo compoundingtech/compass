@@ -1,16 +1,30 @@
 # Ontology: Compass
 
+## The tool
+
 **Compass**:
 The tool. It owns durable planning intent and the accepted execution record for
 that intent. It does not own coordination identity, messaging, presence, process
 supervision, or operational accounting.
 _Avoid_: planner, task runner, issue tracker
 
+## Intent
+
 **Plan**:
 Durable authored intent for one goal: an acceptance contract plus a dependency
 graph of Steps. A Plan is identified by a `PlanId`. A Plan is never edited; it
 is revised, which produces a new Plan Version.
 _Avoid_: ticket, issue, epic, backlog, board
+
+**PlanId**:
+A Plan's identity: the content hash of its origin — the single predecessor-less
+version. It is derived, never declared and never minted, and encodes no
+filesystem, database, transport, or host location. Two versions are the same
+Plan when they share an origin; the origin version's own identity and the PlanId
+are the same hash. It is machine-facing; the human handle for a Plan is its
+`goal`. It is an identity, not a pointer — a cross-Plan reference imports the
+other Plan's version rather than spelling this.
+_Avoid_: plan path, catalog path, file name, plan name, declared id, PlanRef, reference
 
 **Plan Version**:
 An immutable snapshot of a Plan's structural intent, authored as a module and
@@ -35,14 +49,6 @@ dropping a Step is not something Compass refuses but something a revision cannot
 say.
 _Avoid_: patch, diff, regeneration, overwrite
 
-**Evaluation**:
-Running a Plan Version, and transitively everything it imports, to obtain what
-the Plan says. Reading is evaluation — there is no second stored form to consult
-instead — so reading a replicated Plan runs code authored on another machine.
-Evaluation holds no capability it was not explicitly given, and is bounded in
-time and memory.
-_Avoid_: parsing, loading, rendering, interpretation
-
 **Rationale**:
 The required statement on every Plan Version explaining why intent changed. It
 is the durable planning record: the artifact is the plan, the value is the
@@ -50,6 +56,19 @@ Rationale chain. It is close kin to a commit message, and differs in one
 respect that matters — it is attached to a document whose Steps have identity,
 so a reason can be tied to a unit of work rather than to a range of bytes.
 _Avoid_: changelog entry, status note
+
+**Step**:
+A stable unit of intended work within a Plan, carrying dependencies, acceptance
+criteria, and lifecycle. **Its identity is the name it is declared under**,
+qualified by its Plan: authored rather than minted, and independent of the
+Step's content, so it survives a rewording of the same intended work. The name
+is not opaque and not a separate handle — depending on a Step *names the
+declaration* (a language reference), so there is no identifier to invent or
+mistype. A name is never reused after the Step is retired, and a Step declared
+without a name has no identity and is refused.
+_Avoid_: task row, checklist item, ephemeral list index, StepRef, minted id, opaque token
+
+## Lineage and its states
 
 **Head**:
 The frontier of a Plan: the set of Plan Versions with no successor, derived by
@@ -73,6 +92,12 @@ operators learn to ignore the report. Only an open Divergence asks anything of
 anyone.
 _Avoid_: conflict, collision, fork
 
+**Reconciliation**:
+A Plan Version naming more than one predecessor, resolving a Divergence by
+stating the reconciled intent and why. It is an ordinary Plan Version in every
+other respect, and is itself capable of diverging.
+_Avoid_: rebase, conflict resolution, merge commit, fixup
+
 **Orphan**:
 A Plan Version whose predecessor is not present locally. Distinct from
 Divergence, which it superficially resembles: divergent versions share a
@@ -89,45 +114,21 @@ Ordinarily it means replication has not delivered the import yet, and it is
 repaired by waiting; it is permanent if the import was never committed.
 _Avoid_: orphan, broken plan, missing parent
 
-**Reconciliation**:
-A Plan Version naming more than one predecessor, resolving a Divergence by
-stating the reconciled intent and why. It is an ordinary Plan Version in every
-other respect, and is itself capable of diverging.
-_Avoid_: rebase, conflict resolution, merge commit, fixup
+## Reading, storage, and replication
 
-**Step**:
-A stable unit of intended work within a Plan, carrying dependencies, acceptance
-criteria, and lifecycle. **Its identity is the name it is declared under**,
-qualified by its Plan: authored rather than minted, and independent of the
-Step's content, so it survives a rewording of the same intended work. The name
-is not opaque and not a separate handle — depending on a Step *names the
-declaration* (a language reference), so there is no identifier to invent or
-mistype. A name is never reused after the Step is retired, and a Step declared
-without a name has no identity and is refused.
-_Avoid_: task row, checklist item, ephemeral list index, StepRef, minted id, opaque token
-
-**PlanId**:
-A Plan's identity: the content hash of its origin — the single predecessor-less
-version. It is derived, never declared and never minted, and encodes no
-filesystem, database, transport, or host location. Two versions are the same
-Plan when they share an origin; the origin version's own identity and the PlanId
-are the same hash. It is machine-facing; the human handle for a Plan is its
-`goal`. It is an identity, not a pointer — a cross-Plan reference imports the
-other Plan's version rather than spelling this.
-_Avoid_: plan path, catalog path, file name, plan name, declared id, PlanRef, reference
+**Evaluation**:
+Running a Plan Version, and transitively everything it imports, to obtain what
+the Plan says. Reading is evaluation — there is no second stored form to consult
+instead — so reading a replicated Plan runs code authored on another machine.
+Evaluation holds no capability it was not explicitly given, and is bounded in
+time and memory.
+_Avoid_: parsing, loading, rendering, interpretation
 
 **Catalog**:
 The on-disk tree of Plans. Discovery is content-based: the tree is walked and
 files that are Plan Versions are processed, regardless of their path. Path
 segments may supply defaults, but content wins.
 _Avoid_: database, index, registry
-
-**Retired**:
-A declared state marking a Plan or Step as decommissioned. Retirement is always
-authored content carried forward by every later version, never a file deletion
-and never an omission, because the Catalog replicates as a union with no deletes
-and because a revision has no way to omit a Step in the first place.
-_Avoid_: delete, archive, remove
 
 **Index**:
 A machine-local cache holding the evaluated form of a version, keyed by that
@@ -138,19 +139,12 @@ demand, it is never replicated, and there is nothing to invalidate — a changed
 module is a different hash and therefore a different key.
 _Avoid_: database, source of truth, projection, materialized view
 
-**Progress Event**:
-An append-only record of execution against a Step: start, update, handoff,
-completion, evidence. Progress Events never alter structural intent and never
-create a Plan Version. Unlike a version, a Progress Event is inert data: it is
-read without being evaluated, and nothing in the progress layer executes.
-_Avoid_: status field, state column, mutable progress
-
-**Plan Surface**:
-The transport-neutral boundary for Compass queries and mutations, and the only
-sanctioned way to change a Plan. It applies a mutation and returns a stable
-Receipt. A repeated mutation is the same mutation when it carries the same
-authored source, which yields the same identity and therefore one version.
-_Avoid_: port, API, event emitter, shared-files adapter
+**Retired**:
+A declared state marking a Plan or Step as decommissioned. Retirement is always
+authored content carried forward by every later version, never a file deletion
+and never an omission, because the Catalog replicates as a union with no deletes
+and because a revision has no way to omit a Step in the first place.
+_Avoid_: delete, archive, remove
 
 **Convergence**:
 Whether the local catalog has received everything its peers have sent. It is a
@@ -159,12 +153,30 @@ many versions a Plan should have, so completeness cannot be read from the data.
 A query answered before convergence may be answered from stale intent.
 _Avoid_: sync status, freshness, consistency
 
+## Execution record
+
+**Progress Event**:
+An append-only record of execution against a Step: start, update, handoff,
+completion, evidence. Progress Events never alter structural intent and never
+create a Plan Version. Unlike a version, a Progress Event is inert data: it is
+read without being evaluated, and nothing in the progress layer executes.
+_Avoid_: status field, state column, mutable progress
+
 **Readiness**:
 The Plan-derived answer to what work is available now, computed from the Step
 graph at Head, accepted progress, and gates, together with an explanation of
 which dependencies and gates are unsatisfied. An answer without its explanation
 is not Readiness.
 _Avoid_: queue, backlog, todo list, next action
+
+## Change surface and composition
+
+**Plan Surface**:
+The transport-neutral boundary for Compass queries and mutations, and the only
+sanctioned way to change a Plan. It applies a mutation and returns a stable
+Receipt. A repeated mutation is the same mutation when it carries the same
+authored source, which yields the same identity and therefore one version.
+_Avoid_: port, API, event emitter, shared-files adapter
 
 **Receipt**:
 The stable result of an accepted mutation, bound to its affected references and
@@ -173,6 +185,6 @@ _Avoid_: log acknowledgement, observation id
 
 **Observation**:
 An operational fact emitted by a surrounding system after a Compass mutation
-succeeds. It may reference a Receipt, a PlanId, or a Step by its name, but never becomes
-Compass state.
+succeeds. It may reference a Receipt, a PlanId, or a Step by its name, but never
+becomes Compass state.
 _Avoid_: progress authority, completion record
