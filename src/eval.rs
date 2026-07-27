@@ -493,7 +493,7 @@ fn first_diag<T: std::fmt::Display>(errs: &[T]) -> String {
 
 /// The import specifiers a module declares, statically (no evaluation).
 ///
-/// A version references its predecessors by importing their files, so the
+/// A version references its parents by importing their files, so the
 /// lineage can be walked from source bytes alone — admission never runs a module
 /// (02-artifacts). Returns every specifier, including `"compass"`.
 pub fn import_specifiers(source: &str, path: &Path) -> Result<Vec<String>, EvalError> {
@@ -601,7 +601,7 @@ enum Resolved {
 ///
 /// Resolution of a *well-formed* version reference must still succeed when the
 /// file is merely absent, so the loader is invoked and reports it as Unresolved
-/// (a predecessor that has not arrived) rather than being failed here.
+/// (a parent that has not arrived) rather than being failed here.
 ///
 /// The path is normalised lexically, never against the real filesystem, so no
 /// symlink or `..` can redirect resolution outside the catalog.
@@ -716,7 +716,7 @@ fn is_cross_plan_version(target: &Path, base: &Path) -> bool {
 /// and the specifier — `None` when the specifier is not a version reference or
 /// its target plan cannot be determined (e.g. a sibling outside the catalog
 /// layout, which the caller treats as the current plan). This is the single
-/// source of truth both the resolver (Fix 1) and commit's predecessor logic
+/// source of truth both the resolver (Fix 1) and commit's parent logic
 /// (Fix 2) classify against, so they cannot drift.
 pub(crate) fn import_target_plan(base: &Path, spec: &str) -> Option<String> {
     let dir = base.parent().unwrap_or_else(|| Path::new("."));
@@ -731,7 +731,7 @@ pub(crate) fn import_target_plan(base: &Path, spec: &str) -> Option<String> {
 
 /// Verify a resolved import is an admitted plan version: its content hash must
 /// match the hash embedded in its filename (02-artifacts). A missing file is
-/// Unresolved (a predecessor that has not arrived); present-but-mismatched is a
+/// Unresolved (a parent that has not arrived); present-but-mismatched is a
 /// Failed read (a non-admitted or tampered file the plan must not evaluate).
 fn verify_admitted(name: &str) -> Result<(), EvalError> {
     let path = Path::new(name);

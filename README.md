@@ -5,12 +5,12 @@ Durable planning intent for coding agents.
 **A plan is immutable. Planning is continuous.**
 
 Compass stores plans as a chain of immutable versions. You never edit a plan —
-you revise it, which appends a new version naming its predecessor and stating
+you revise it, which appends a new version naming its parent and stating
 *why* intent changed. The plan at the tip is a disposable guess; the chain of
 reasons that produced it is what compounds.
 
 A plan is a TypeScript module. A step is a named declaration, a dependency is a
-reference to another step, and a revision is a function of its predecessor. See
+reference to another step, and a revision is a function of its parent. See
 [`examples/`](./examples/) for three worked plans, and
 [`context/`](./context/) for why it is shaped this way.
 
@@ -89,7 +89,7 @@ validates the *structure* of a criterion and stays neutral about what it means.
 ## "Isn't this just git?"
 
 Its object model is close to git's: immutable snapshots naming their
-predecessors, a required message per change, divergence as a legitimate state,
+parents, a required message per change, divergence as a legitimate state,
 reconciliation with multiple parents. If you're thinking *why not a `plan.md` and
 good commit messages* — that gets you a lot of this.
 
@@ -113,14 +113,16 @@ you resolve by hand. That trade is recorded, not hidden:
 ## How it is stored
 
 ```
-catalog/plans/<plan>/versions/<seq>-<hash>.ts     immutable, mode 0444
-catalog/plans/<plan>/events/<ts>-<id>...          append-only
+catalog/plans/<planref>/versions/<seq>-<hash>.ts     immutable, mode 0444
+catalog/plans/<planref>/events/<ts>-<id>...          append-only
 ```
 
-A committed version *is* the module you wrote, stored unchanged and named by the
-hash of its bytes. There is no separate rendered form, so nothing can drift from
+A `<planref>` is the Plan's identity: the content hash of its origin — the first
+version — so a Plan is named by nothing and filed under a value it derives
+(decision 0017). A committed version *is* the module you wrote, stored unchanged
+and named by the hash of its bytes. There is no separate rendered form, so nothing can drift from
 what you authored, and altering a committed version changes its hash — which is
-how tampering is caught. A revision imports its predecessor by that hashed name,
+how tampering is caught. A revision imports its parent by that hashed name,
 so the lineage is a real module graph.
 
 There is no head file. That removes the cell concurrent writers would contend
@@ -129,7 +131,7 @@ flight, so convergence comes from the sync layer instead. Point a file-sync
 mechanism with union / newer-wins / no-delete semantics at the catalog. Without
 one, Compass runs single-machine.
 
-Reading a plan evaluates it — and, through its imports, its predecessors and any
+Reading a plan evaluates it — and, through its imports, its parents and any
 plans it references. That evaluation runs against a locked-down engine with no
 clock, no filesystem, no network, and no way to run code the plan didn't declare;
 it has to be, because under replication those modules were authored on another

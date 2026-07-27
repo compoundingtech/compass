@@ -2,7 +2,7 @@
 
 Three plans, worked end to end, in three different domains. Each is a real
 catalog: the version files are named by the hash of their own bytes, and each
-revision imports its predecessor by that name — so the lineage is genuine, not
+revision imports its parent by that name — so the lineage is genuine, not
 illustrative.
 
 Compass evaluates these: they are the acceptance suite (`tests/examples.rs`).
@@ -30,7 +30,7 @@ export const fix     = step({ work: "...", dependsOn: [measure], accept: /* ... 
 export default plan({ author: "cos", goal: "...", why: "...", steps: [measure, fix] })
 ```
 
-A revision imports its predecessor and is a function of it. It can edit, add, and
+A revision imports its parent and is a function of it. It can edit, add, and
 retire — it has no way to *remove* a step, because every step is carried forward
 by the revision itself. A step that is no longer wanted is retired, and stays in
 the record marked as such.

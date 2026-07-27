@@ -21,12 +21,12 @@ pub const HASH_PREFIX_LEN: usize = 12;
 /// A unit of intended work within a Plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
-    /// StepRef — the name the step was declared under (decision 0012).
+    /// Identity — the name the step was declared under (decision 0012).
     pub id: String,
     pub work: String,
-    /// StepRefs this step depends on, sorted.
+    /// Names of the steps this step depends on, sorted.
     pub depends_on: Vec<String>,
-    /// The StepRef this step replaces, when intended work changed identity.
+    /// The step this replaces, by name,, when intended work changed identity.
     pub supersedes: Option<String>,
     /// Machine-checkable acceptance (decision 0006).
     pub accept: Pred,
@@ -62,7 +62,7 @@ impl Step {
 /// An immutable snapshot of a Plan's structural intent, as evaluated.
 ///
 /// `plan`, `seq`, and `parents` are supplied by the catalog (the plan is the
-/// directory, the parents are the imported predecessor files, the seq is a
+/// directory, the parents are the imported parent files, the seq is a
 /// reading aid). Everything else is declared by the module and recovered by
 /// evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,7 @@ pub struct Version {
     pub plan: String,
     /// Position along this version's lineage. A reading aid, never a key.
     pub seq: u64,
-    /// Content hashes of each predecessor (resolved), sorted.
+    /// Content hashes of each parent (resolved), sorted.
     pub parents: Vec<String>,
     pub author: String,
     /// Required Rationale (CMP-R03).
@@ -82,7 +82,7 @@ pub struct Version {
 
 impl Version {
     /// Assemble a domain version from an evaluated module plus the catalog-side
-    /// facts (which plan, which lineage position, which predecessors).
+    /// facts (which plan, which lineage position, which parents).
     pub fn from_sem(plan: &str, seq: u64, parents: Vec<String>, sem: &SemVersion) -> Version {
         let mut parents = parents;
         parents.sort();
@@ -114,6 +114,17 @@ impl Version {
     /// dependency present, and no dependency cycle (which would make readiness
     /// unexplainable). These run against an evaluated module at commit time.
     pub fn validate(&self) -> Result<(), String> {
+        // A goal is required on every version and is the Plan's human handle
+        // (CMP.DM-R18, decision 0017). It is checked on the evaluated value, so a
+        // revision that inherits its parent's goal passes, and one that
+        // states an empty goal is refused.
+        if self.goal.trim().is_empty() {
+            return Err(
+                "a version must state a non-empty goal: it is the human handle for the \
+                        plan (CMP.DM-R18)"
+                    .to_string(),
+            );
+        }
         let mut seen: Vec<&str> = Vec::new();
         for s in &self.steps {
             if seen.contains(&s.id.as_str()) {

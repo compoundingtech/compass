@@ -121,3 +121,13 @@ index Compass keeps to avoid re-evaluating what it has already evaluated is
 machine-local and is not declared to the sync mechanism: it is computable from
 what does replicate, so shipping it would buy nothing and would create a value
 two machines could disagree about.
+
+## External records follow, never lead
+
+A surrounding system may record an operational fact of its own — a deployment,
+a notification, a dashboard row — after a Commit is accepted, and may reference
+the resulting Plan Version, a PlanId, or a Step by its name. Such a record is
+that system's concept, not Compass's: it never becomes Compass state, and its
+absence or failure never changes a Compass result. Compass defines no term for
+it, because it belongs to whoever emits it. This is the integration side of
+CMP.SURF-R08 — the guarantee that composition is one-directional.

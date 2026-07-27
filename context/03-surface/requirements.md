@@ -14,28 +14,31 @@
   would be a second authority. _refines: CMP-R01, CMP-R09._
 
 - **CMP.SURF-R02 Transport-neutral.** The surface is defined in terms of
-  references, mutations, queries, and results, and carries no assumption about
+  references, commits, queries, and results, and carries no assumption about
   process, protocol, or invocation. Changing how it is reached must not change
   what it means. _refines: CMP-R08._
 
-- **CMP.SURF-R03 A mutation is one accepted transition.** Each mutation names
-  one domain transition — creation, revision, acceptance change, progress,
-  retirement, reconciliation — and is applied whole or not at all.
+- **CMP.SURF-R03 A write is a Commit or a Progress append.** The surface has
+  exactly two write acts. A Commit names one version-producing transition —
+  creation, revision, or reconciliation — and is applied whole or not at all.
+  Recording progress appends one Progress Event and produces no version.
+  Conflating them would let an inert record masquerade as a change of intent.
   _refines: CMP-R02._
 
-- **CMP.SURF-R04 Success yields a stable Receipt.** An accepted mutation returns
-  a result naming the affected references and the resulting version identity,
-  which remains valid for later reference. _refines: CMP-R09._
+- **CMP.SURF-R04 A Commit yields the stored Version.** An accepted Commit
+  returns the Plan Version it stored — its identity and lineage coordinates,
+  valid for later reference. Content addressing means the version's identity is
+  the result; there is no separate token. _refines: CMP-R09._
 
-- **CMP.SURF-R05 Failure yields nothing.** A rejected mutation produces no
-  receipt, records no state, permits no external record claiming success, and
-  leaves what the caller authored untouched. Nothing is written back into
-  authored content, so a refusal costs exactly the work of resubmitting.
+- **CMP.SURF-R05 Failure yields nothing.** A rejected Commit produces no version,
+  records no state, permits no external record claiming success, and leaves what
+  the caller authored untouched. Nothing is written back into authored content,
+  so a refusal costs exactly the work of resubmitting.
   _refines: CMP-R09, CMP-R02._
 
-- **CMP.SURF-R06 Repetition is not duplication.** Submitting the same mutation
-  more than once records it once. Two submissions are the same when they carry
-  the same authored content, which yields the same identity and therefore one
+- **CMP.SURF-R06 Repetition is not duplication.** Committing the same content
+  more than once records it once. Two Commits are the same when they carry the
+  same authored content, which yields the same identity and therefore one
   version — a property of the data rather than a protocol both sides must
   implement correctly. _refines: CMP-R02, CMP-R10._
 
@@ -45,7 +48,7 @@
   _refines: CMP-R05._
 
 - **CMP.SURF-R08 External records follow, never lead.** An outside system may
-  record a fact referencing a Receipt only after the mutation is accepted. Its
+  record a fact referencing a Plan Version only after the Commit is accepted. Its
   failure never rolls back, blocks, or alters the result.
   _refines: CMP-R09._
 

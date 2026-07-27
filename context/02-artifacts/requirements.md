@@ -89,7 +89,7 @@
 
 - **CMP.FS-R11 Repair never rewrites history.** Recovery from damage proceeds by
   authoring new content that records the damage and continues from the last
-  intact predecessor. Editing or deleting a damaged version cascades through
+  intact parent. Editing or deleting a damaged version cascades through
   every descendant, and deletion returns on the next sync.
   _refines: CMP-R07, CMP-R02._
 

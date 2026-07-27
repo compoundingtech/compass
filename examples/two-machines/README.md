@@ -16,7 +16,7 @@ at the same time, each from `001`, neither having seen the other's work:
   adds a grammar guard for unterminated groups.
 
 When the two catalogs replicate together, both `002` versions arrive. They share
-predecessor `001`, so they are a **divergence** — not a sequence, a disagreement.
+parent `001`, so they are a **divergence** — not a sequence, a disagreement.
 Both survive; nothing is silently dropped.
 
 ```
@@ -31,7 +31,7 @@ Both survive; nothing is silently dropped.
 
 ## The reconciliation
 
-`003` is an ordinary revision with **two** predecessors. Every step of both sides
+`003` is an ordinary revision with **two** parents. Every step of both sides
 is carried forward — the fuzz step from A and the guard from B — so nothing is
 lost by "choosing a side", because there is no way to choose a side. The only
 thing `003` states is what actually changed: the fuzz run now depends on the
@@ -45,10 +45,10 @@ added.
 ## What to look at in the files
 
 - **Two `002-` files with different hashes**, both importing `001`. That is a
-  divergence on disk — same predecessor, two contents, both admitted. Union
+  divergence on disk — same parent, two contents, both admitted. Union
   replication keeps both; neither overwrites the other.
 - **`003` imports both sides** and lists them in `revises`. A reconciliation is a
-  revision that names more than one predecessor; there is nothing else special
+  revision that names more than one parent; there is nothing else special
   about it.
 - **The reconciliation edits one step** (`fuzz.with({ dependsOn: [...] })`) and
   mentions nothing else. Everything unmentioned is carried forward. A reader sees
@@ -56,7 +56,13 @@ added.
 
 ## Files
 
-- [`001-8e528ff9bc56.ts`](./catalog/plans/pl_nested_groups/versions/001-8e528ff9bc56.ts) — the shared base
-- [`002-2c922cb978de.ts`](./catalog/plans/pl_nested_groups/versions/002-2c922cb978de.ts) — machine A: fuzz
-- [`002-e5d27ee538bf.ts`](./catalog/plans/pl_nested_groups/versions/002-e5d27ee538bf.ts) — machine B: guard
-- [`003-037d5ddb9db7.ts`](./catalog/plans/pl_nested_groups/versions/003-037d5ddb9db7.ts) — reconciliation
+This plan has no name. Its identity — its PlanId — is the content hash of its
+origin, the shared base `001` (decision 0017), so the plan directory is
+`8e528ff9bc56`, the same hash the `001` file carries. Both `002` sides descend
+from that origin, so they are the same Plan. To a person it is its goal, "Nested
+groups parse correctly"; the hash is only for exactness.
+
+- [`001-8e528ff9bc56.ts`](./catalog/plans/8e528ff9bc56/versions/001-8e528ff9bc56.ts) — the shared base
+- [`002-2c922cb978de.ts`](./catalog/plans/8e528ff9bc56/versions/002-2c922cb978de.ts) — machine A: fuzz
+- [`002-e5d27ee538bf.ts`](./catalog/plans/8e528ff9bc56/versions/002-e5d27ee538bf.ts) — machine B: guard
+- [`003-037d5ddb9db7.ts`](./catalog/plans/8e528ff9bc56/versions/003-037d5ddb9db7.ts) — reconciliation

@@ -6,7 +6,10 @@ Realizes [requirements.md](./requirements.md). Storage is specified in
 ## Plan
 
 A Plan is a lineage of Versions plus the Progress recorded against them. It is
-named by a `PlanRef`; what determines that reference is unresolved (DQ04).
+named by a `PlanId` — the content hash of its origin, the one version with no
+parent (decision 0017). Identity is derived from the origin, so two
+versions are the same Plan iff they share one; the origin's own identity is the
+PlanId. The human handle for a Plan is its required `goal`, not the PlanId.
 
 ## Version
 
@@ -17,14 +20,14 @@ fields of a record:
 | Declared | Meaning |
 | --- | --- |
 | plan | the Plan this version belongs to |
-| predecessors | each version it revises — none for the first, one ordinarily, several for a reconciliation |
+| parents | each version it revises — none for the first, one ordinarily, several for a reconciliation |
 | author | who authored the revision |
 | rationale | why intent changed — required |
 | goal | the intent being pursued |
 | steps | zero or more named Step declarations |
 | retired | whether the Plan itself is decommissioned |
 
-A predecessor is not a name copied into the version; it is the predecessor
+A parent is not a name copied into the version; it is the parent
 itself, referenced. That is what lets a revision be written as a function of
 what came before, and it is why a retry cannot drift: the base a revision was
 written against is part of the revision, not something read when it is applied.
@@ -46,24 +49,24 @@ itself. Whether that gap should be closed is unresolved (DQ07).
 
 ## Revision
 
-A revision is written against its predecessor and may:
+A revision is written against its parent and may:
 
 - **edit** a Step — change its work, dependencies, or acceptance,
 - **add** a Step — a new declaration, whose name becomes its identity,
 - **retire** a Step — mark it decommissioned while it stays in the Plan.
 
-There is no fourth operation. Every Step of the predecessor is carried forward
+There is no fourth operation. Every Step of the parent is carried forward
 unless it is edited or retired, so a revision has no way to say "and this one is
 gone." Losing a Step silently is not caught by a check; it has no spelling.
 
 Retirement is therefore visible in the lineage: a retired Step appears in every
 later version, marked, rather than ceasing to appear.
 
-A reconciliation is a revision with more than one predecessor and behaves the
-same way: every Step of every predecessor is carried forward, and the version
+A reconciliation is a revision with more than one parent and behaves the
+same way: every Step of every parent is carried forward, and the version
 states only what it resolves. This is what makes reconciliation derivable
 against each side rather than a choice of one side whose rejected half vanishes
-unrecorded. Where two predecessors disagree about the same Step, the
+unrecorded. Where two parents disagree about the same Step, the
 reconciliation must say which intent survives; how that is stated, and what
 happens if it does not, is unresolved (DQ08).
 
@@ -91,9 +94,9 @@ properties and therefore use different mechanisms; this asymmetry is deliberate.
 
 Head is the set of versions with no successor, computed by walking the lineage.
 
-- **Divergence** — two or more versions share a predecessor. Both are valid.
-- **Reconciliation** — an ordinary version naming several predecessors.
-- **Orphan** — a version whose predecessor is unknown locally.
+- **Divergence** — two or more versions share a parent. Both are valid.
+- **Reconciliation** — an ordinary version naming several parents.
+- **Orphan** — a version whose parent is unknown locally.
 - **Unresolved** — a Plan that cannot be evaluated, because something it
   references is not present locally.
 
@@ -176,7 +179,7 @@ rather than the scope it is judged in.
 A Step is ready when it is not retired, its acceptance criterion is not yet
 satisfied, and every Step it depends on has a satisfied criterion.
 
-Every answer carries its reasons — which dependency or gate is unsatisfied.
+Every answer carries its reasons — which dependency or criterion is unsatisfied.
 
 Under divergence, readiness is computed per head member and labelled with it.
 Merging the graphs would produce a plan nobody wrote; picking a side would hide

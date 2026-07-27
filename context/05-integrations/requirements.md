@@ -83,7 +83,7 @@
 - **CMP.INT-R10 An undelivered reference makes a Plan unreadable, not merely
   incomplete.** Replication that has not yet delivered something a Plan
   references leaves that Plan unresolved: it answers nothing at all, rather than
-  answering with a short lineage. This is more severe than a missing predecessor
+  answering with a short lineage. This is more severe than a missing parent
   and must be reported as its own condition, because an operator who reads it as
   an ordinary gap will wait for a Plan to fill in when what is actually missing
   is the thing without which nothing can be read. _refines: CMP-R05, CMP-R07._

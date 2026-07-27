@@ -15,15 +15,15 @@ pub const EXIT_FAILURE: i32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// Scaffold a runnable starter module (CMP-R11): one command, no docs.
+    /// Scaffold a runnable starter module (CMP-R11): one command, no docs, no
+    /// identifier — a Plan's identity is derived from its origin at commit
+    /// (decision 0017).
     Start {
-        plan: String,
         goal: Option<String>,
     },
-    /// Evaluate a module and store it by the hash of its source bytes.
+    /// Evaluate a module and store it under its derived PlanId (decision 0017).
     Commit {
         path: PathBuf,
-        plan: Option<String>,
     },
     /// The lineage and current intent.
     Show {
@@ -175,36 +175,33 @@ fn one_positional(rest: Vec<String>, cmd: &str, spec: &str) -> Result<String, St
 }
 
 fn parse_start(rest: Vec<String>) -> Result<Command, String> {
-    let mut plan = None;
     let mut goal = None;
     let mut it = rest.into_iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--goal" => goal = Some(it.next().ok_or("`--goal` needs text")?),
-            other if other.starts_with('-') => {
-                return Err(format!("`start`: unexpected argument `{other}`"))
-            }
             other => {
-                if plan.is_some() {
-                    return Err("`start` takes one <plan>".into());
-                }
-                plan = Some(other.to_string());
+                return Err(format!(
+                    "`start` takes no plan name — identity is derived at commit (decision 0017); \
+                     unexpected argument `{other}`\n  usage: compass start [--goal <text>]"
+                ))
             }
         }
     }
-    Ok(Command::Start {
-        plan: plan.ok_or("usage: compass start <plan> [--goal <text>]")?,
-        goal,
-    })
+    Ok(Command::Start { goal })
 }
 
 fn parse_commit(rest: Vec<String>) -> Result<Command, String> {
     let mut path = None;
-    let mut plan = None;
-    let mut it = rest.into_iter();
-    while let Some(a) = it.next() {
+    for a in rest {
         match a.as_str() {
-            "--plan" => plan = Some(it.next().ok_or("`--plan` needs a plan ref")?),
+            "--plan" => {
+                return Err(
+                    "`commit` no longer takes `--plan`: a Plan's identity is derived from \
+                            its origin at commit (decision 0017)"
+                        .into(),
+                )
+            }
             other if other.starts_with('-') => {
                 return Err(format!("`commit`: unexpected argument `{other}`"))
             }
@@ -217,8 +214,7 @@ fn parse_commit(rest: Vec<String>) -> Result<Command, String> {
         }
     }
     Ok(Command::Commit {
-        path: path.ok_or("usage: compass commit <module.ts> [--plan <plan>]")?,
-        plan,
+        path: path.ok_or("usage: compass commit <module.ts>")?,
     })
 }
 
@@ -323,23 +319,26 @@ fn take_plan(rest: &mut Vec<String>, cmd: &str) -> Result<String, String> {
 pub fn help(topic: Option<&str>) -> String {
     match topic {
         Some("commit") => "\
-compass commit <module.ts> [--plan <plan>]
+compass commit <module.ts>
 
-  Evaluate a module and store it by the hash of its source bytes.
-  A version is the authored module, stored unchanged (decision 0014).
+  Evaluate a module and store it under its derived PlanId (decision 0017).
+  A version is the authored module, stored unchanged (decision 0014); a Plan's
+  identity is the content hash of its origin, derived here — you name nothing.
 
   - Committing content already present is a no-op success.
   - New content that revises nothing is refused, with a distinct message.
   - A module uses plan() for a first version, prior.revise({...}) for a
-    revision, or reconcile({revises:[...]}) for a reconciliation. Predecessors
-    are the version files it imports.
+    revision, or reconcile({revises:[...]}) for a reconciliation. Parents
+    are the version files it imports; the Plan is derived from the origin they
+    descend from.
 "
         .to_string(),
         Some("start") => "\
-compass start <plan> [--goal <text>]
+compass start [--goal <text>]
 
-  Scaffold a runnable starter module for a new plan, then print where it is.
-  Edit it and `compass commit` it. Nothing to import, configure, or look up.
+  Scaffold a runnable starter module, then print where it is. Edit it and
+  `compass commit` it. Nothing to import, configure, name, or look up — a Plan's
+  identity is derived from its origin when you commit (decision 0017).
 "
         .to_string(),
         Some("evidence") => "\
@@ -361,8 +360,8 @@ compass — durable planning intent for coding agents
 
 usage: compass <command> [options]
 
-  start <plan> [--goal <t>]            scaffold a starter module
-  commit <module.ts> [--plan <p>]      evaluate a module and store it
+  start [--goal <t>]                   scaffold a starter module
+  commit <module.ts>                   evaluate a module and store it
   show <plan>                          lineage and current intent
   history <plan>                       the Rationale chain
   ready <plan>                         what work is available now
@@ -372,6 +371,9 @@ usage: compass <command> [options]
   progress <plan> <step> <kind>        record start|update|handoff|done
   evidence <plan> <step> <kind> k=v    record evidence acceptance evaluates
   version                              build identity
+
+A <plan> is addressed by its PlanId (the origin's hash) or, when unambiguous,
+by its goal. A Plan is never named: its identity is derived (decision 0017).
 
 global options:
   --json                machine-readable output, same fields as the human form
@@ -402,21 +404,27 @@ mod tests {
 
     #[test]
     fn start_and_commit() {
+        // start names no plan (identity is derived at commit, decision 0017).
         assert_eq!(
-            p(&["start", "pl_x", "--goal", "Ship"]).unwrap().command,
+            p(&["start", "--goal", "Ship"]).unwrap().command,
             Command::Start {
-                plan: "pl_x".into(),
                 goal: Some("Ship".into())
             }
         );
         assert_eq!(
-            p(&["commit", "a.ts", "--plan", "pl_x"]).unwrap().command,
+            p(&["start"]).unwrap().command,
+            Command::Start { goal: None }
+        );
+        // a stray positional is refused — there is no plan name to give.
+        assert!(p(&["start", "pl_x"]).is_err());
+        assert_eq!(
+            p(&["commit", "a.ts"]).unwrap().command,
             Command::Commit {
                 path: PathBuf::from("a.ts"),
-                plan: Some("pl_x".into())
             }
         );
-        assert!(p(&["start"]).is_err());
+        // `--plan` is gone.
+        assert!(p(&["commit", "a.ts", "--plan", "pl_x"]).is_err());
         assert!(p(&["commit"]).is_err());
     }
 

@@ -22,10 +22,10 @@
 //!
 //! ## On "gates"
 //!
-//! The spec names "dependencies and gates" as the two things readiness folds
-//! over, but defines no gate concept anywhere. This implementation treats the
-//! acceptance predicate as the gate — it is the only authored condition a step
-//! carries besides its dependencies. Noted as a spec ambiguity.
+//! The ontology defines no separate gate concept: the acceptance predicate *is*
+//! the gate — the only authored condition a step carries besides its
+//! dependencies. Readiness folds over dependencies and unmet criteria, and this
+//! implementation treats a step's acceptance as what gates its dependents.
 
 use crate::event::{Event, EventKind};
 use crate::model::{Step, Version};
@@ -58,7 +58,7 @@ pub struct StepReadiness {
     pub state: StepState,
     /// Why the step is in this state. Never empty.
     pub reason: String,
-    /// StepRefs whose acceptance is holding this step back.
+    /// Steps whose acceptance is holding this step back.
     pub blocked_by: Vec<String>,
     /// The acceptance criterion, canonically rendered.
     pub accept: String,

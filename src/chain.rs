@@ -8,9 +8,9 @@
 //! The ontology is explicit and the distinction is the one Compass must not
 //! get wrong:
 //!
-//! - **Divergence** — two or more versions share the same predecessor. Intent
+//! - **Divergence** — two or more versions share the same parent. Intent
 //!   genuinely disagreed. Repaired by authoring a Reconciliation.
-//! - **Orphan** — a version whose predecessor is *absent locally*. Ordinarily
+//! - **Orphan** — a version whose parent is *absent locally*. Ordinarily
 //!   replication is simply incomplete. Repaired by **waiting**.
 //!
 //! Reconciling around a version that is merely in-flight writes permanent
@@ -20,12 +20,12 @@
 //! A version can be both a head member and an orphan: decision 0002
 //! Amendment 1 describes receiving versions 1, 2 and 4, where 4's parent has
 //! not arrived. Head is then `{2, 4}` — and reporting that as divergence would
-//! be a lie, because 2 and 4 share no predecessor.
+//! be a lie, because 2 and 4 share no parent.
 
 use crate::catalog::{Admitted, PlanStore};
 use std::collections::{BTreeMap, HashSet};
 
-/// A version whose predecessor is not present locally.
+/// A version whose parent is not present locally.
 #[derive(Debug, Clone)]
 pub struct Orphan<'a> {
     pub version: &'a Admitted,
@@ -33,10 +33,10 @@ pub struct Orphan<'a> {
     pub missing: Vec<String>,
 }
 
-/// Two or more versions sharing a predecessor.
+/// Two or more versions sharing a parent.
 #[derive(Debug, Clone)]
 pub struct Divergence<'a> {
-    /// The shared predecessor hash, or `None` when several root versions exist.
+    /// The shared parent hash, or `None` when several root versions exist.
     pub parent: Option<String>,
     pub children: Vec<&'a Admitted>,
     /// Whether this divergence is still unresolved.
@@ -137,7 +137,7 @@ pub fn analyze(store: &PlanStore) -> Analysis<'_> {
         })
         .collect();
 
-    // Group by predecessor. Only predecessors that are actually present count:
+    // Group by parent. Only parents that are actually present count:
     // two versions both naming an absent parent are two orphans, not a
     // divergence we can reason about.
     let mut by_parent: BTreeMap<&str, Vec<&Admitted>> = BTreeMap::new();
@@ -274,7 +274,7 @@ pub fn lineage<'a>(store: &'a PlanStore, hash: &str) -> Vec<&'a Admitted> {
     out
 }
 
-/// The `seq` a new version should carry: one past the longest predecessor.
+/// The `seq` a new version should carry: one past the longest parent.
 pub fn next_seq(parents: &[&Admitted]) -> u64 {
     parents.iter().map(|p| p.seq).max().unwrap_or(0) + 1
 }
@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_predecessor_is_an_orphan_not_a_divergence() {
+    fn a_missing_parent_is_an_orphan_not_a_divergence() {
         // Decision 0002 Amendment 1: versions 1, 2 and 4 arrive; 3 has not.
         let a = v("pl_1000000000", 1, "first", vec![]);
         let b = v("pl_1000000000", 2, "second", vec![a.hash.clone()]);
@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(an.head.len(), 2, "2 and 4 both lack a successor");
         assert!(
             !an.diverged(),
-            "2 and 4 share no predecessor, so this is not divergence"
+            "2 and 4 share no parent, so this is not divergence"
         );
         assert_eq!(an.orphans.len(), 1);
         assert_eq!(an.orphans[0].version.hash, d_hash);
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn two_versions_missing_the_same_parent_are_orphans_not_divergent() {
-        // The shared predecessor is absent, so nothing local proves they
+        // The shared parent is absent, so nothing local proves they
         // disagreed — only that replication is behind.
         let absent = "e".repeat(64);
         let a = v("pl_1000000000", 2, "one", vec![absent.clone()]);
@@ -523,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn lineage_stops_at_an_absent_predecessor() {
+    fn lineage_stops_at_an_absent_parent() {
         let absent = "d".repeat(64);
         let a = v("pl_1000000000", 2, "orphaned", vec![absent]);
         let tip = a.hash.clone();
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn next_seq_follows_the_longest_predecessor() {
+    fn next_seq_follows_the_longest_parent() {
         let short = v("pl_1000000000", 2, "short", vec![]);
         let long = v("pl_1000000000", 9, "long", vec![]);
         assert_eq!(next_seq(&[&short, &long]), 10);

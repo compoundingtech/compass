@@ -23,9 +23,10 @@ not planning. Every later question — where plans live, how they replicate, wha
 happens when the bus changes shape — inherits that coupling, and none of them
 can be answered on planning's own terms.
 
-Defining opaque references, an idempotent port, and stable receipts before the
-first authoritative write costs boundary work now and avoids an identity
-migration later. Because no live plan state exists, that cost is at its minimum.
+Defining opaque references, an idempotent write path, and stable version
+identities before the first authoritative write costs boundary work now and
+avoids an identity migration later. Because no live plan state exists, that cost
+is at its minimum.
 
 ## Options
 
@@ -41,9 +42,9 @@ Compass is a standalone authority. Its core owns goals, Steps, dependencies,
 acceptance, revisions, and accepted progress. It depends on no other tool's
 paths, schemas, event envelopes, or storage layouts.
 
-Other systems compose with Compass through opaque references, mutations,
-queries, and receipts. They may record operational facts referencing a
-Receipt, but such facts never become Compass state. Compass exposes no
+Other systems compose with Compass through opaque references, commits,
+queries, and version identities. They may record operational facts referencing a
+Plan Version, but such facts never become Compass state. Compass exposes no
 subcommand inside another tool's CLI namespace; a facade would make the
 namespace imply authority.
 
@@ -52,6 +53,6 @@ namespace imply authority.
 - The Catalog root is configuration, not a compiled-in path.
 - Composition is one-directional: Compass never reads another tool to
   reconstruct its own state.
-- Surrounding systems store opaque refs and receipts only.
+- Surrounding systems store opaque refs and version identities only.
 - Moving Compass behind a different transport or process changes packaging, not
   identifiers or persisted semantics.

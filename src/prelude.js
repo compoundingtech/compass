@@ -130,7 +130,7 @@ function plan(spec) {
 }
 
 // Apply the edit / add / retire triad against a carried-forward step list.
-// There is no fourth operation: a step of a predecessor is carried forward
+// There is no fourth operation: a step of a parent is carried forward
 // unless it is edited or retired, so dropping a step has no spelling.
 function applyOps(steps, rev) {
   const edit = rev.edit || [];
@@ -215,7 +215,7 @@ function canonStep(s) {
   });
 }
 
-// A reconciliation is a revision with more than one predecessor. Every step of
+// A reconciliation is a revision with more than one parent. Every step of
 // every side is carried forward, keyed by identity, so nothing is lost by
 // choosing a side; the version states only what it changes.
 //
