@@ -119,19 +119,29 @@ an open question (DQ08).
 
 ## Cross-plan references
 
-Depending on a Step in another Plan is importing that Plan's version and
-referring to the Step.
+Referring to another Plan's version is importing it. The import path reaches
+across the catalog's plan-then-versions layout, so a sibling plan is two levels
+up — pop `versions/`, then the plan segment:
 
 ```ts
-import release from "../pl_release/versions/007-4d81f0a2.ts"
-
-// ... dependsOn: [release.steps.branchCut]
+import release from "../../pl_release/versions/007-4d81f0a2.ts"
 ```
 
 The import is what makes the reference checkable rather than spelled — and it is
 why the other Plan must be present to evaluate this one. A machine that has not
 received `pl_release` cannot read this Plan at all, and reports it as Unresolved
-rather than showing an incomplete graph.
+rather than showing an incomplete graph. The imported version is a reference,
+not a predecessor: it does not become a parent of the importing version, and its
+absence-of-admission there is an error, not an uncommitted-predecessor.
+
+A Step **depending on** a Step in another Plan — `dependsOn:
+[release.steps.branchCut]` — is a different and larger thing, and is **not yet
+supported**. A dependency is validated against the importing version's own
+Steps, and readiness folds within one Plan; a dependency edge that crosses Plans
+raises questions neither answers — whether the other Plan's Step gates this one,
+how readiness folds across Plans, what an out-of-Plan retirement does here. Those
+are open (DQ11). A cross-plan *reference* resolves today; a cross-plan
+*dependency edge* does not.
 
 ## The evidence vocabulary
 

@@ -114,3 +114,25 @@ reference is itself the pin, or a manifest beside the catalog. The import-encode
 it option is attractive because it makes the pin a resolved reference rather than
 an asserted value, consistent with CMP-R10, but it entangles the library's
 distribution with the catalog's contents.
+
+**DQ11 — Can a Step depend on a Step in another Plan?**
+A cross-plan *reference* (importing another Plan's version) resolves and is
+checkable. A cross-plan *dependency edge* — a Step whose `dependsOn` names a Step
+in another Plan — does not work: a dependency is validated against the importing
+version's own Steps, and readiness folds within one Plan. Making the edge real
+raises questions neither mechanism answers: does the other Plan's Step being
+accepted gate this one; how does readiness fold across Plans; what does an
+out-of-Plan retirement do to a dependent here; and what happens when the other
+Plan diverges. Until those are settled the reference is supported and the edge is
+not.
+
+**DQ12 — Does authored content carry variable references, or only the root?**
+CMP.FS-R05 promises machine-agnostic paths via variable references inside
+authored content. In practice a version references its predecessors by *relative*
+import and the catalog *root* is environment-resolved, which achieves
+machine-agnosticism without any variable expansion in the module resolver. Either
+the requirement is satisfied by that weaker mechanism and should say so, or
+variable-in-content is a real feature still to build. The relative-import form is
+also what makes the flat per-Plan `versions/` layout load-bearing (a predecessor
+is named by relative path), so this interacts with how a catalog may be
+reorganized.

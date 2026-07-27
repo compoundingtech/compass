@@ -1,6 +1,6 @@
 # DELTA-001: Repair has no command
 
-Status: narrowed
+Status: open
 
 ## Divergence
 
@@ -32,8 +32,7 @@ refuses on a clean catalog); the authoring is guided rather than performed.
 
 ## Direction
 
-update implementation — close the remaining gap by having `repair` write the
-damage-recording version directly rather than scaffolding it.
+update implementation
 
 ## Resolution Signal
 
