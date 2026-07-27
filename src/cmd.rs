@@ -261,22 +261,42 @@ fn cmd_commit(root: &Path, path: &Path, plan_opt: Option<&str>) -> Result<Output
         .or_else(|| map.get(path))
         .ok_or_else(|| "the module did not export a plan".to_string())?;
 
-    // Resolve predecessors from the module's imports.
+    // Classify each version import (CMP.API-R05). An import of a version of the
+    // SAME plan is a predecessor, resolved against this plan's store and made a
+    // parent of the new version. An import of ANOTHER plan's version is a
+    // cross-plan reference: it must resolve against that plan's store (the other
+    // version must be admitted), but it is not a predecessor and does not make
+    // this commit "have an uncommitted predecessor".
     let store = catalog::load_plan(root, &plan)?;
     let mut parents: Vec<String> = Vec::new();
     for spec in crate::eval::import_specifiers(&source_str, path)
         .map_err(|e| format!("cannot read imports: {}", e.message()))?
     {
         let file = spec.rsplit('/').next().unwrap_or(&spec);
-        if let Some((_seq, prefix)) = crate::model::parse_filename(file) {
-            match store.resolve_hash(&prefix) {
+        let Some((_seq, prefix)) = crate::model::parse_filename(file) else {
+            continue; // e.g. the `compass` prelude — not a version reference.
+        };
+        // A target plan that differs from the current one is a cross-plan
+        // reference; anything else (a sibling, or a version of this same plan)
+        // is a predecessor.
+        match crate::eval::import_target_plan(path, &spec) {
+            Some(other) if other != plan => {
+                let other_store = catalog::load_plan(root, &other)?;
+                if other_store.resolve_hash(&prefix).is_none() {
+                    return Err(format!(
+                        "cross-plan reference {prefix} is not committed in {other}; \
+                         nothing was recorded"
+                    ));
+                }
+            }
+            _ => match store.resolve_hash(&prefix) {
                 Some(a) => parents.push(a.hash.clone()),
                 None => {
                     return Err(format!(
                         "predecessor {prefix} is not committed in {plan}; nothing was recorded"
                     ))
                 }
-            }
+            },
         }
     }
     parents.sort();

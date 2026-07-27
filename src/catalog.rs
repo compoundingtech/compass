@@ -282,7 +282,7 @@ fn admit_version(path: &Path, expected_plan: &str) -> Result<Raw, String> {
     }
 
     let source = std::str::from_utf8(&bytes).map_err(|e| format!("not valid UTF-8: {e}"))?;
-    let import_prefixes = predecessor_prefixes(source, path)?;
+    let import_prefixes = predecessor_prefixes(source, path, expected_plan)?;
 
     Ok(Raw {
         hash: actual,
@@ -293,8 +293,15 @@ fn admit_version(path: &Path, expected_plan: &str) -> Result<Raw, String> {
     })
 }
 
-/// The hash-prefixes of the version files a module imports, read statically.
-fn predecessor_prefixes(source: &str, path: &Path) -> Result<Vec<String>, String> {
+/// The hash-prefixes of the *predecessor* version files a module imports, read
+/// statically. A predecessor is a version of the SAME plan; a version of another
+/// plan is a cross-plan reference (CMP.API-R05), not a parent, and is excluded
+/// from the lineage so it never shows as an orphan predecessor edge.
+fn predecessor_prefixes(
+    source: &str,
+    path: &Path,
+    expected_plan: &str,
+) -> Result<Vec<String>, String> {
     let specs = crate::eval::import_specifiers(source, path)
         .map_err(|e| format!("cannot read imports: {}", e.message()))?;
     let mut out = Vec::new();
@@ -302,7 +309,12 @@ fn predecessor_prefixes(source: &str, path: &Path) -> Result<Vec<String>, String
         // A predecessor import is a relative path to a version file.
         let file = spec.rsplit('/').next().unwrap_or(&spec);
         if let Some((_seq, prefix)) = parse_filename(file) {
-            out.push(prefix);
+            // Only a same-plan version is a predecessor. A cross-plan reference
+            // (target plan differs) is not part of this plan's lineage.
+            match crate::eval::import_target_plan(path, &spec) {
+                Some(other) if other != expected_plan => continue,
+                _ => out.push(prefix),
+            }
         }
     }
     Ok(out)
