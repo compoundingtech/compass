@@ -763,3 +763,49 @@ fn status_and_show_display_the_goal() {
         show.text
     );
 }
+
+/// `progress` and `evidence` reference the Plan by its goal (the human handle),
+/// not the raw hash — the version is still cited by hash (CMP.DM-R12).
+#[test]
+fn progress_and_evidence_reference_the_plan_by_goal() {
+    let root = std::env::temp_dir().join(format!("compass-0017-record-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    let plan = &planref_of(DEMO_ORIGIN);
+    commit_module(&root, plan, DEMO_ORIGIN);
+
+    let prog = run(
+        &root,
+        Command::Progress {
+            plan: plan.clone(),
+            step: "build".into(),
+            kind: "start".into(),
+            note: None,
+        },
+    )
+    .unwrap();
+    assert!(
+        prog.text.contains("Ship the widget"),
+        "progress references the plan by goal: {}",
+        prog.text
+    );
+
+    let ev = run(
+        &root,
+        Command::Evidence {
+            plan: plan.clone(),
+            step: "build".into(),
+            kind: "test".into(),
+            attrs: vec![
+                ("name".into(), "t".into()),
+                ("status".into(), "pass".into()),
+            ],
+        },
+    )
+    .unwrap();
+    assert!(
+        ev.text.contains("Ship the widget"),
+        "evidence references the plan by goal: {}",
+        ev.text
+    );
+}

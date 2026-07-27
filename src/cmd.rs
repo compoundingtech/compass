@@ -1038,7 +1038,7 @@ fn cmd_progress(
     let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     let an = chain::analyze(&store);
-    let (head, _v) = head_for_step(&an, step)?;
+    let (head, v) = head_for_step(&an, step)?;
 
     let ekind = EventKind::parse(kind).ok_or_else(|| format!("unknown progress kind `{kind}`"))?;
     let event = Event {
@@ -1055,12 +1055,13 @@ fn cmd_progress(
         attrs: vec![],
     };
     let path = catalog::write_event(root, &event)?;
+    // Reference the Plan by its goal (the human handle), the version by its hash.
     let text = format!(
         "{} {} {} on {} (against {})\n",
         style::green("recorded"),
         kind,
         style::bold(step),
-        style::bold(plan),
+        style::bold(&v.goal),
         style::short(&head.hash)
     );
     let json = Json::obj(vec![
@@ -1119,11 +1120,12 @@ fn cmd_evidence(
     };
     let path = catalog::write_event(root, &event)?;
 
+    // Reference the Plan by its goal (the human handle), the version by its hash.
     let mut text = format!(
         "{} evidence {} on {} (against {})\n",
         style::green("recorded"),
         style::bold(step),
-        style::bold(plan),
+        style::bold(&version.goal),
         style::short(&head.hash)
     );
     if let Some(w) = &warning {
