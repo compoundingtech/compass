@@ -41,6 +41,8 @@ pkgs.rustPlatform.buildRustPackage {
       ../rust-toolchain.toml
       ../src
       (lib.fileset.maybeMissing ../tests)
+      # the acceptance suite reads the committed example plans as fixtures
+      (lib.fileset.maybeMissing ../examples)
     ];
   };
 
