@@ -114,6 +114,17 @@ impl Version {
     /// dependency present, and no dependency cycle (which would make readiness
     /// unexplainable). These run against an evaluated module at commit time.
     pub fn validate(&self) -> Result<(), String> {
+        // A goal is required on every version and is the Plan's human handle
+        // (CMP.DM-R12, decision 0017). It is checked on the evaluated value, so a
+        // revision that inherits its predecessor's goal passes, and one that
+        // states an empty goal is refused.
+        if self.goal.trim().is_empty() {
+            return Err(
+                "a version must state a non-empty goal: it is the human handle for the \
+                        plan (CMP.DM-R12)"
+                    .to_string(),
+            );
+        }
         let mut seen: Vec<&str> = Vec::new();
         for s in &self.steps {
             if seen.contains(&s.id.as_str()) {

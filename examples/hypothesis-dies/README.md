@@ -49,6 +49,11 @@ wrong.
 
 ## Files
 
-- [`001-634e2a7c458b.ts`](./catalog/plans/pl_ci_speed/versions/001-634e2a7c458b.ts) — the hypothesis
-- [`002-68fdda593f4d.ts`](./catalog/plans/pl_ci_speed/versions/002-68fdda593f4d.ts) — it dies
-- [`003-55ca61867911.ts`](./catalog/plans/pl_ci_speed/versions/003-55ca61867911.ts) — the cold-start follow-on
+This plan has no name. Its identity — its PlanRef — is the content hash of its
+origin, the first version (decision 0017), so the plan directory is
+`634e2a7c458b`, the same hash the `001` file carries. To a person it is its goal,
+"CI builds finish under 10 minutes"; the hash is only for exactness.
+
+- [`001-634e2a7c458b.ts`](./catalog/plans/634e2a7c458b/versions/001-634e2a7c458b.ts) — the hypothesis
+- [`002-68fdda593f4d.ts`](./catalog/plans/634e2a7c458b/versions/002-68fdda593f4d.ts) — it dies
+- [`003-55ca61867911.ts`](./catalog/plans/634e2a7c458b/versions/003-55ca61867911.ts) — the cold-start follow-on

@@ -51,5 +51,11 @@ and says so.
 
 ## Files
 
-- [`001-cfe4f8d721d2.ts`](./catalog/plans/pl_agent_memory_piece/versions/001-cfe4f8d721d2.ts) — the plan
-- [`002-043517240262.ts`](./catalog/plans/pl_agent_memory_piece/versions/002-043517240262.ts) — narrowed to two tools
+This plan has no name. Its identity — its PlanRef — is the content hash of its
+origin, the first version (decision 0017), so the plan directory is
+`cfe4f8d721d2`, the same hash the `001` file carries. To a person it is its goal,
+"Publish a defensible comparison of agent-memory tools"; the hash is only for
+exactness.
+
+- [`001-cfe4f8d721d2.ts`](./catalog/plans/cfe4f8d721d2/versions/001-cfe4f8d721d2.ts) — the plan
+- [`002-043517240262.ts`](./catalog/plans/cfe4f8d721d2/versions/002-043517240262.ts) — narrowed to two tools

@@ -56,7 +56,13 @@ added.
 
 ## Files
 
-- [`001-8e528ff9bc56.ts`](./catalog/plans/pl_nested_groups/versions/001-8e528ff9bc56.ts) — the shared base
-- [`002-2c922cb978de.ts`](./catalog/plans/pl_nested_groups/versions/002-2c922cb978de.ts) — machine A: fuzz
-- [`002-e5d27ee538bf.ts`](./catalog/plans/pl_nested_groups/versions/002-e5d27ee538bf.ts) — machine B: guard
-- [`003-037d5ddb9db7.ts`](./catalog/plans/pl_nested_groups/versions/003-037d5ddb9db7.ts) — reconciliation
+This plan has no name. Its identity — its PlanRef — is the content hash of its
+origin, the shared base `001` (decision 0017), so the plan directory is
+`8e528ff9bc56`, the same hash the `001` file carries. Both `002` sides descend
+from that origin, so they are the same Plan. To a person it is its goal, "Nested
+groups parse correctly"; the hash is only for exactness.
+
+- [`001-8e528ff9bc56.ts`](./catalog/plans/8e528ff9bc56/versions/001-8e528ff9bc56.ts) — the shared base
+- [`002-2c922cb978de.ts`](./catalog/plans/8e528ff9bc56/versions/002-2c922cb978de.ts) — machine A: fuzz
+- [`002-e5d27ee538bf.ts`](./catalog/plans/8e528ff9bc56/versions/002-e5d27ee538bf.ts) — machine B: guard
+- [`003-037d5ddb9db7.ts`](./catalog/plans/8e528ff9bc56/versions/003-037d5ddb9db7.ts) — reconciliation

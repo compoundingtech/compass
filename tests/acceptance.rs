@@ -57,9 +57,8 @@ fn every_example_evaluates() {
 /// states only what it changed.
 #[test]
 fn reconciliation_carries_both_sides_forward() {
-    let p = Path::new(
-        "examples/two-machines/catalog/plans/pl_nested_groups/versions/003-037d5ddb9db7.ts",
-    );
+    let p =
+        Path::new("examples/two-machines/catalog/plans/8e528ff9bc56/versions/003-037d5ddb9db7.ts");
     let map = eval::eval_plan_file(p).unwrap();
     let v = map.get(&std::fs::canonicalize(p).unwrap()).unwrap();
     let names: Vec<&str> = v.steps.iter().map(|s| s.name.as_str()).collect();
@@ -103,6 +102,15 @@ fn run(root: &Path, cmd: Command) -> Result<cmd::Output, String> {
     })
 }
 
+/// The PlanRef a source files under (decision 0017): for an origin, the
+/// hash-prefix of its own bytes. Revisions of it share this same PlanRef.
+fn planref_of(source: &str) -> String {
+    compass::sha256::sha256_hex(source.as_bytes())[..12].to_string()
+}
+
+/// Author `source` as a draft in the plan's versions dir (so a revision's sibling
+/// import resolves), commit it — the CLI names no plan, deriving it (decision
+/// 0017) — and return the freshly committed head filename.
 fn commit_module(root: &Path, plan: &str, source: &str) -> String {
     let vdir = catalog::versions_dir(root, plan);
     std::fs::create_dir_all(&vdir).unwrap();
@@ -114,7 +122,6 @@ fn commit_module(root: &Path, plan: &str, source: &str) -> String {
         root,
         Command::Commit {
             path: draft.clone(),
-            plan: Some(plan.into()),
         },
     )
     .unwrap_or_else(|e| panic!("commit failed: {e}"));
@@ -139,44 +146,46 @@ fn e2e_start_commit_show_history_revise_reconcile() {
     let root = std::env::temp_dir().join(format!("compass-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let guard = Tmp(root.clone());
-    let plan = "pl_demo";
 
-    // start — scaffolds a runnable draft (CMP-R11).
-    run(
-        &root,
-        Command::Start {
-            plan: plan.into(),
-            goal: Some("Ship the widget".into()),
-        },
-    )
-    .unwrap();
-    // `start` scaffolds a runnable draft in the plan's versions/ directory.
-    let scaffolded = std::fs::read_dir(catalog::versions_dir(&root, plan))
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .any(|e| {
-            let n = e.file_name();
-            let n = n.to_string_lossy();
-            n.ends_with(".ts") && compass::model::parse_filename(&n).is_none()
-        });
-    assert!(scaffolded, "start should scaffold an editable draft module");
-
-    // commit a real root (edit stands in for the operator editing the draft).
+    // The real origin the operator will author (edit stands in for editing the
+    // scaffold). Its PlanRef is derived from these bytes (decision 0017).
     let root_mod = r#"import { plan, step, evidence } from "compass"
 export const build = step({ work: "Build it", accept: evidence.test({ name: "t", status: "pass" }) })
 export const ship = step({ work: "Ship it", dependsOn: [build], accept: evidence.review({ actor: "cos", verdict: "approved" }) })
 export default plan({ author: "cos", goal: "Ship the widget", why: "It is time.", steps: [build, ship] })
 "#;
+    let plan = &planref_of(root_mod);
+
+    // start — scaffolds a runnable draft (CMP-R11), naming no plan (decision 0017).
+    run(&root, Command::Start { goal: None }).unwrap();
+    // `start` scaffolds a runnable draft into the staging area, not a plan dir —
+    // the plan has no identity until its origin is committed.
+    let scaffolded = std::fs::read_dir(catalog::drafts_dir(&root))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .any(|e| e.file_name().to_string_lossy().ends_with(".ts"));
+    assert!(scaffolded, "start should scaffold an editable draft module");
+
+    // commit the origin: it files under its own hash, which is the PlanRef.
     let v1 = commit_module(&root, plan, root_mod);
+    assert_eq!(
+        &v1[4..16],
+        plan.as_str(),
+        "the origin's version-id and the PlanRef are the same hash (decision 0017)"
+    );
+    assert!(
+        catalog::plan_dir(&root, plan).is_dir(),
+        "the origin files under its derived PlanRef {plan}"
+    );
 
     // show + history + ready read the plan by evaluating it.
-    assert!(run(&root, Command::Show { plan: plan.into() })
+    assert!(run(&root, Command::Show { plan: plan.clone() })
         .unwrap()
         .text
         .contains("build"));
-    let hist = run(&root, Command::History { plan: plan.into() }).unwrap();
+    let hist = run(&root, Command::History { plan: plan.clone() }).unwrap();
     assert!(hist.text.contains("It is time"));
-    assert!(run(&root, Command::Ready { plan: plan.into() })
+    assert!(run(&root, Command::Ready { plan: plan.clone() })
         .unwrap()
         .text
         .contains("build"));
@@ -188,7 +197,6 @@ export default plan({ author: "cos", goal: "Ship the widget", why: "It is time."
         &root,
         Command::Commit {
             path: vdir.join("again.ts"),
-            plan: Some(plan.into()),
         },
     )
     .unwrap();
@@ -206,7 +214,7 @@ export default prior.revise({{
 "#
     );
     let v2 = commit_module(&root, plan, &rev);
-    assert!(run(&root, Command::Show { plan: plan.into() })
+    assert!(run(&root, Command::Show { plan: plan.clone() })
         .unwrap()
         .text
         .contains("carefully"));
@@ -233,7 +241,6 @@ export default prior.revise({{ author: "dev", why: "Add a docs step.", add: [doc
         &root,
         Command::Commit {
             path: vdir.join("b.ts"),
-            plan: Some(plan.into()),
         },
     )
     .unwrap();
@@ -411,24 +418,28 @@ fn a_cross_plan_reference_is_not_a_predecessor() {
     let _g = Tmp(root.clone());
     catalog::init(&root).unwrap();
 
-    // The other plan, with an admitted version.
+    // The other plan, filed under its own PlanRef (its origin hash).
     let dep_src = r#"import { plan, step, evidence } from "compass"
 export const seed = step({ work: "Seed work", accept: evidence.test({ status: "pass" }) })
 export default plan({ author: "cos", goal: "dep", why: "the referenced plan", steps: [seed] })
 "#;
-    let dep_v1 = admit(&root, "pl_dep", 1, dep_src);
+    let dep_plan = planref_of(dep_src);
+    let dep_v1 = admit(&root, &dep_plan, 1, dep_src);
 
-    // A first version of pl_main that references pl_dep's version cross-plan.
-    // The reference is real (it reads a value from the other plan's version) but
-    // is not a predecessor: this commit has no parent.
+    // A first version of the main plan that references the dep plan's version
+    // cross-plan, by its PlanRef directory. The reference is real (it reads a
+    // value from the other plan's version) but is not a predecessor: no parent.
     let main_src = format!(
         r#"import {{ plan, step, evidence }} from "compass"
-import dep from "../../pl_dep/versions/{dep_v1}"
+import dep from "../../{dep_plan}/versions/{dep_v1}"
 export const local = step({{ work: "Local, mirrors " + dep.steps.seed.work, accept: evidence.test({{ status: "pass" }}) }})
-export default plan({{ author: "cos", goal: "main", why: "references pl_dep cross-plan", steps: [local] }})
+export default plan({{ author: "cos", goal: "main", why: "references dep cross-plan", steps: [local] }})
 "#
     );
-    let vdir = catalog::versions_dir(&root, "pl_main");
+    // The main plan has no predecessor, so its PlanRef is its own hash — author
+    // the draft in that dir so the cross-plan `../../` reference resolves.
+    let main_plan = planref_of(&main_src);
+    let vdir = catalog::versions_dir(&root, &main_plan);
     std::fs::create_dir_all(&vdir).unwrap();
     let draft = vdir.join("draft.ts");
     std::fs::write(&draft, &main_src).unwrap();
@@ -437,7 +448,6 @@ export default plan({{ author: "cos", goal: "main", why: "references pl_dep cros
         &root,
         Command::Commit {
             path: draft.clone(),
-            plan: Some("pl_main".into()),
         },
     )
     .unwrap_or_else(|e| panic!("cross-plan commit must succeed, not be rejected: {e}"));
@@ -448,8 +458,9 @@ export default plan({{ author: "cos", goal: "main", why: "references pl_dep cros
         out.text
     );
 
-    // The committed version records no parent, and is not an orphan.
-    let store = catalog::load_plan(&root, "pl_main").unwrap();
+    // The committed version records no parent, is filed under its own PlanRef,
+    // and is not an orphan.
+    let store = catalog::load_plan(&root, &main_plan).unwrap();
     assert_eq!(store.versions.len(), 1, "rejected: {:?}", store.rejected);
     assert!(
         store.versions[0].parents.is_empty(),
@@ -614,4 +625,141 @@ fn the_sandbox_grants_no_dynamic_code_or_clock() {
             "probe `{probe}` should be unavailable"
         );
     }
+}
+
+// ---- decision 0017: a Plan's identity is its origin ----
+
+const DEMO_ORIGIN: &str = r#"import { plan, step, evidence } from "compass"
+export const build = step({ work: "Build it", accept: evidence.test({ name: "t", status: "pass" }) })
+export default plan({ author: "cos", goal: "Ship the widget", why: "It is time.", steps: [build] })
+"#;
+
+/// An origin commit files under its own hash — the origin's version-id and the
+/// PlanRef are the same hash — and a revision inherits that same PlanRef.
+#[test]
+fn an_origin_files_under_its_own_hash_and_a_revision_shares_the_planref() {
+    let root = std::env::temp_dir().join(format!("compass-0017-id-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    let plan = &planref_of(DEMO_ORIGIN);
+
+    let v1 = commit_module(&root, plan, DEMO_ORIGIN);
+    assert_eq!(
+        &v1[4..16],
+        plan.as_str(),
+        "an origin's version-id is its PlanRef"
+    );
+    assert!(catalog::plan_dir(&root, plan).is_dir());
+
+    // A revision, authored as a sibling of its predecessor, inherits the Plan.
+    let rev = format!(
+        r#"import prior from "./{v1}"
+export default prior.revise({{ author: "cos", why: "Reword.", edit: [prior.steps.build.with({{ work: "Build it, carefully" }})] }})
+"#
+    );
+    let v2 = commit_module(&root, plan, &rev);
+    let store = catalog::load_plan(&root, plan).unwrap();
+    assert_eq!(
+        store.versions.len(),
+        2,
+        "the revision files under the same PlanRef as its origin: {:?}",
+        store.rejected
+    );
+    let head = chain::analyze(&store)
+        .head
+        .into_iter()
+        .max_by_key(|a| a.seq)
+        .unwrap()
+        .clone();
+    assert_eq!(head.path.file_name().unwrap().to_str().unwrap(), v2);
+    assert_eq!(head.seq, 2, "the revision is seq 2 of the same lineage");
+}
+
+/// A version placed in the wrong plan dir is rejected — never reinterpreted into
+/// the Plan it was filed under — on the same terms as a content-hash mismatch.
+#[test]
+fn a_version_in_the_wrong_plan_dir_is_rejected() {
+    let root = std::env::temp_dir().join(format!("compass-0017-misfiled-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    catalog::init(&root).unwrap();
+
+    // File the origin under a directory that is not its own hash. The filename
+    // still matches the content (so this is not tampering), but the dir does not.
+    let wrong = "abcabcabcabc";
+    assert_ne!(wrong, planref_of(DEMO_ORIGIN));
+    admit(&root, wrong, 1, DEMO_ORIGIN);
+
+    let store = catalog::load_plan(&root, wrong).unwrap();
+    assert!(
+        store.versions.is_empty(),
+        "a misfiled version is not admitted"
+    );
+    assert_eq!(store.rejected.len(), 1);
+    assert!(
+        store.rejected[0].reason.contains("misfiled"),
+        "the rejection must name the misfiling: {}",
+        store.rejected[0].reason
+    );
+
+    // verify surfaces it as a problem, so the plan does not read clean.
+    let out = run(
+        &root,
+        Command::Verify {
+            plan: Some(wrong.into()),
+            all: false,
+        },
+    )
+    .unwrap();
+    assert_ne!(out.code, 0, "a misfiled version fails verification");
+}
+
+/// A commit whose goal is empty is refused, and nothing is recorded (CMP.DM-R12).
+#[test]
+fn a_commit_with_an_empty_goal_is_refused() {
+    let root = std::env::temp_dir().join(format!("compass-0017-goal-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    catalog::init(&root).unwrap();
+
+    let empty_goal = r#"import { plan, step, evidence } from "compass"
+export const a = step({ work: "x", accept: evidence.test({ status: "pass" }) })
+export default plan({ author: "cos", goal: "", why: "w", steps: [a] })
+"#;
+    // An origin has no predecessor import, so it may be authored anywhere.
+    let draft = tmp_module(&root, "empty-goal.ts", empty_goal);
+    let err = match run(&root, Command::Commit { path: draft }) {
+        Ok(o) => panic!("an empty goal must be refused, got: {}", o.text),
+        Err(e) => e,
+    };
+    assert!(
+        err.contains("goal") && err.contains("nothing was recorded"),
+        "an empty goal must be refused with nothing recorded: {err}"
+    );
+    // The refusal recorded nothing: the plan dir does not exist.
+    assert!(!catalog::plan_dir(&root, &planref_of(empty_goal)).exists());
+}
+
+/// `status` and `show` present a Plan by its goal, the human handle, not by its
+/// raw hash (CMP.DM-R12).
+#[test]
+fn status_and_show_display_the_goal() {
+    let root = std::env::temp_dir().join(format!("compass-0017-handle-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _g = Tmp(root.clone());
+    let plan = &planref_of(DEMO_ORIGIN);
+    commit_module(&root, plan, DEMO_ORIGIN);
+
+    let status = run(&root, Command::Status).unwrap();
+    assert!(
+        status.text.contains("Ship the widget"),
+        "status shows the goal: {}",
+        status.text
+    );
+    let show = run(&root, Command::Show { plan: plan.clone() }).unwrap();
+    assert!(
+        show.text.contains("Ship the widget"),
+        "show shows the goal: {}",
+        show.text
+    );
 }

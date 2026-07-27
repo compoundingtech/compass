@@ -49,8 +49,8 @@ pub fn execute(inv: &Invocation) -> Result<Output, String> {
             Json::obj(vec![("command", Json::str("help"))]),
         )),
         Command::Version => Ok(cmd_version()),
-        Command::Start { plan, goal } => cmd_start(&root, plan, goal.as_deref(), &author),
-        Command::Commit { path, plan } => cmd_commit(&root, path, plan.as_deref()),
+        Command::Start { goal } => cmd_start(&root, goal.as_deref(), &author),
+        Command::Commit { path } => cmd_commit(&root, path),
         Command::Show { plan } => cmd_show(&root, plan),
         Command::History { plan } => cmd_history(&root, plan),
         Command::Ready { plan } => cmd_ready(&root, plan),
@@ -99,11 +99,52 @@ fn convergence_json(c: &Convergence) -> (&'static str, Json) {
 fn load(root: &Path, plan: &str) -> Result<PlanStore, String> {
     if !catalog::exists(root) {
         return Err(format!(
-            "no catalog at {}\n  run `compass start <plan>` to begin",
+            "no catalog at {}\n  run `compass start` to begin",
             root.display()
         ));
     }
     catalog::load_plan(root, plan)
+}
+
+/// Resolve a Plan address to its PlanRef directory (decision 0017). A Plan is
+/// addressed by its PlanRef — the origin's hash, which is the directory name — so
+/// that always works. As a convenience it also resolves an unambiguous hash
+/// prefix, and, failing that, an exact `goal` match when it is unique. Exactness
+/// is the hash; goal-resolution is a nicety and never guesses.
+fn resolve_plan(root: &Path, addr: &str) -> String {
+    if !catalog::exists(root) {
+        return addr.to_string();
+    }
+    // Exact PlanRef: a directory by that name.
+    if catalog::plan_dir(root, addr).is_dir() {
+        return addr.to_string();
+    }
+    let plans = catalog::list_plans(root).unwrap_or_default();
+    // A unique hash-prefix of a PlanRef.
+    let prefix_hits: Vec<&String> = plans.iter().filter(|p| p.starts_with(addr)).collect();
+    if prefix_hits.len() == 1 {
+        return prefix_hits[0].clone();
+    }
+    // A unique exact goal match, evaluated at each Plan's head.
+    let mut goal_hits: Vec<String> = Vec::new();
+    for p in &plans {
+        let Ok(store) = catalog::load_plan(root, p) else {
+            continue;
+        };
+        let an = chain::analyze(&store);
+        if an
+            .head
+            .iter()
+            .filter_map(|h| evaluate(h).ok())
+            .any(|v| v.goal == addr)
+        {
+            goal_hits.push(p.clone());
+        }
+    }
+    if goal_hits.len() == 1 {
+        return goal_hits.remove(0);
+    }
+    addr.to_string()
 }
 
 /// Evaluate one admitted version to its intent, mapping the read failure modes.
@@ -179,35 +220,48 @@ fn cmd_version() -> Output {
 // start
 // ---------------------------------------------------------------------------
 
-fn cmd_start(root: &Path, plan: &str, goal: Option<&str>, author: &str) -> Result<Output, String> {
+fn cmd_start(root: &Path, goal: Option<&str>, author: &str) -> Result<Output, String> {
     catalog::init(root)?;
-    let dir = catalog::versions_dir(root, plan);
+    // A draft has no PlanRef yet — identity is derived from the origin at commit
+    // (decision 0017) — so it is scaffolded into a staging area, not a plan dir.
+    let dir = catalog::drafts_dir(root);
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let draft = dir.join("_new.ts");
-    if draft.exists() {
-        return Err(format!(
-            "a draft already exists at {}\n  edit it and `compass commit {}`",
-            draft.display(),
-            draft.display()
-        ));
-    }
-    let goal = goal.unwrap_or("State the goal here");
+    let draft = next_draft_path(&dir);
+
+    // A blank goal by default: the goal is required (CMP.DM-R12), so committing
+    // the scaffold unedited is refused — the operator must state the goal.
+    let goal = goal.unwrap_or("");
     let scaffold = starter_module(goal, author);
     std::fs::write(&draft, &scaffold)
         .map_err(|e| format!("cannot write {}: {e}", draft.display()))?;
 
     let text = format!(
-        "scaffolded a starter plan for {}\n  edit   {}\n  commit compass commit {}\n",
-        style::bold(plan),
+        "scaffolded a starter plan\n  edit   {}\n  commit compass commit {}\n  {}\n",
         draft.display(),
-        draft.display()
+        draft.display(),
+        style::dim("its identity is derived from the origin when you commit — you name nothing"),
     );
     let json = Json::obj(vec![
         ("command", Json::str("start")),
-        ("plan", Json::str(plan)),
         ("draft", Json::str(draft.to_string_lossy())),
     ]);
     Ok(Output::ok(text, json))
+}
+
+/// A non-colliding draft path in the staging area, so `start` always succeeds
+/// and never asks for an identifier: `plan.ts`, then `plan-2.ts`, and so on.
+fn next_draft_path(dir: &Path) -> PathBuf {
+    let first = dir.join("plan.ts");
+    if !first.exists() {
+        return first;
+    }
+    for n in 2.. {
+        let p = dir.join(format!("plan-{n}.ts"));
+        if !p.exists() {
+            return p;
+        }
+    }
+    unreachable!("an unbounded search for a free draft name cannot exhaust")
 }
 
 fn starter_module(goal: &str, author: &str) -> String {
@@ -223,7 +277,7 @@ export const first = step({{
 
 export default plan({{
   author: {author:?},
-  goal: {goal:?},
+  goal: {goal:?}, // required — the human handle for this plan (decision 0017)
   why: "Why this plan exists — the durable record of reasons.",
   steps: [first],
 }})
@@ -235,16 +289,15 @@ export default plan({{
 // commit
 // ---------------------------------------------------------------------------
 
-fn cmd_commit(root: &Path, path: &Path, plan_opt: Option<&str>) -> Result<Output, String> {
+fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
     let source = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let source_str = String::from_utf8(source.clone())
         .map_err(|e| format!("{}: not valid UTF-8: {e}", path.display()))?;
 
-    let plan = match plan_opt {
-        Some(p) => p.to_string(),
-        None => infer_plan(path)
-            .ok_or_else(|| "cannot determine the plan; pass --plan <plan>".to_string())?,
-    };
+    // A Plan's identity is derived from its origin (decision 0017): the operator
+    // names nothing. An origin is its own PlanRef; a revision inherits its Plan
+    // from the predecessor it descends from.
+    let plan = catalog::derive_planref(path, &source)?;
 
     // Evaluate the authored module (imports resolve at its location).
     let map = crate::eval::eval_plan_file(path).map_err(|e| {
@@ -354,10 +407,12 @@ fn cmd_commit(root: &Path, path: &Path, plan_opt: Option<&str>) -> Result<Output
 
     let (out_path, hash, _created) = catalog::write_version(root, &plan, seq, &source)?;
 
-    // A draft authored in place is superseded by its hash-named form.
-    if path.parent() == Some(catalog::versions_dir(root, &plan).as_path())
-        && path.file_name() != out_path.file_name()
-    {
+    // A draft is superseded by its hash-named form and removed — whether it was
+    // scaffolded into the staging area or authored in place in the versions dir.
+    let parent = path.parent();
+    let is_draft = parent == Some(catalog::drafts_dir(root).as_path())
+        || parent == Some(catalog::versions_dir(root, &plan).as_path());
+    if is_draft && path.file_name() != out_path.file_name() {
         let _ = std::fs::remove_file(path);
     }
 
@@ -394,21 +449,12 @@ fn receipt_json(kind: &str, plan: &str, hash: &str, seq: u64, parents: &[String]
     ])
 }
 
-/// Infer the plan ref from a path under `plans/<plan>/versions/`.
-fn infer_plan(path: &Path) -> Option<String> {
-    let versions = path.parent()?;
-    if versions.file_name()?.to_str()? != "versions" {
-        return None;
-    }
-    let plan_dir = versions.parent()?;
-    Some(plan_dir.file_name()?.to_str()?.to_string())
-}
-
 // ---------------------------------------------------------------------------
 // show
 // ---------------------------------------------------------------------------
 
 fn cmd_show(root: &Path, plan: &str) -> Result<Output, String> {
+    let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     if store.versions.is_empty() && store.rejected.is_empty() {
         return Ok(not_found(plan));
@@ -550,6 +596,7 @@ fn divergence_report(an: &Analysis) -> String {
 // ---------------------------------------------------------------------------
 
 fn cmd_history(root: &Path, plan: &str) -> Result<Output, String> {
+    let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     if store.versions.is_empty() {
         return Ok(not_found(plan));
@@ -559,6 +606,15 @@ fn cmd_history(root: &Path, plan: &str) -> Result<Output, String> {
 
     let mut text = String::new();
     let mut entries: Vec<Json> = Vec::new();
+
+    // The goal is the Plan's human handle (CMP.DM-R12): lead with it, addressed
+    // by the PlanRef and the first head's goal.
+    let goal = an
+        .head
+        .iter()
+        .find_map(|h| evaluate(h).ok().map(|v| v.goal))
+        .unwrap_or_default();
+    text.push_str(&format!("{}  {}\n", style::bold(&style::short(plan)), goal));
 
     for h in &an.head {
         let graph = match graph_from(&store, h) {
@@ -599,6 +655,7 @@ fn cmd_history(root: &Path, plan: &str) -> Result<Output, String> {
     let json = Json::obj(vec![
         ("command", Json::str("history")),
         ("plan", Json::str(plan)),
+        ("goal", Json::str(&goal)),
         ("rationale", Json::arr(entries)),
         convergence_json(&c),
     ]);
@@ -610,6 +667,7 @@ fn cmd_history(root: &Path, plan: &str) -> Result<Output, String> {
 // ---------------------------------------------------------------------------
 
 fn cmd_ready(root: &Path, plan: &str) -> Result<Output, String> {
+    let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     if store.versions.is_empty() {
         return Ok(not_found(plan));
@@ -724,15 +782,23 @@ fn cmd_status(root: &Path) -> Result<Output, String> {
     for plan in &plans {
         let store = catalog::load_plan(root, plan)?;
         let an = chain::analyze(&store);
+        // The goal is the human handle (CMP.DM-R12): lead with it, not the hash.
+        let goal = an
+            .head
+            .iter()
+            .find_map(|h| evaluate(h).ok().map(|v| v.goal))
+            .unwrap_or_default();
         text.push_str(&format!(
-            "{}  {}  {}, {}\n",
-            style::bold(plan),
+            "{}  {}\n  {}  {}, {}\n",
+            style::bold(&style::short(plan)),
+            goal,
             an.state(),
             style::count(store.versions.len(), "version"),
             style::count(an.head.len(), "head"),
         ));
         rows.push(Json::obj(vec![
             ("plan", Json::str(plan)),
+            ("goal", Json::str(&goal)),
             ("state", Json::str(an.state())),
             ("versions", Json::num(store.versions.len() as i64)),
             ("heads", Json::num(an.head.len() as i64)),
@@ -758,7 +824,7 @@ fn cmd_verify(root: &Path, plan: Option<&str>, all: bool) -> Result<Output, Stri
     let plans = if all {
         catalog::list_plans(root)?
     } else {
-        vec![plan.unwrap().to_string()]
+        vec![resolve_plan(root, plan.unwrap())]
     };
     let mut problems: Vec<Json> = Vec::new();
     let mut text = String::new();
@@ -869,6 +935,7 @@ fn file_name(p: &Path) -> String {
 // ---------------------------------------------------------------------------
 
 fn cmd_repair(root: &Path, plan: &str) -> Result<Output, String> {
+    let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     let an = chain::analyze(&store);
 
@@ -968,6 +1035,7 @@ fn cmd_progress(
     note: Option<&str>,
     author: &str,
 ) -> Result<Output, String> {
+    let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     let an = chain::analyze(&store);
     let (head, _v) = head_for_step(&an, step)?;
@@ -1016,6 +1084,7 @@ fn cmd_evidence(
     attrs: &[(String, String)],
     author: &str,
 ) -> Result<Output, String> {
+    let plan = &resolve_plan(root, plan);
     let store = load(root, plan)?;
     let an = chain::analyze(&store);
     let (head, version) = head_for_step(&an, step)?;

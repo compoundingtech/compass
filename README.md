@@ -113,12 +113,14 @@ you resolve by hand. That trade is recorded, not hidden:
 ## How it is stored
 
 ```
-catalog/plans/<plan>/versions/<seq>-<hash>.ts     immutable, mode 0444
-catalog/plans/<plan>/events/<ts>-<id>...          append-only
+catalog/plans/<planref>/versions/<seq>-<hash>.ts     immutable, mode 0444
+catalog/plans/<planref>/events/<ts>-<id>...          append-only
 ```
 
-A committed version *is* the module you wrote, stored unchanged and named by the
-hash of its bytes. There is no separate rendered form, so nothing can drift from
+A `<planref>` is the Plan's identity: the content hash of its origin — the first
+version — so a Plan is named by nothing and filed under a value it derives
+(decision 0017). A committed version *is* the module you wrote, stored unchanged
+and named by the hash of its bytes. There is no separate rendered form, so nothing can drift from
 what you authored, and altering a committed version changes its hash — which is
 how tampering is caught. A revision imports its predecessor by that hashed name,
 so the lineage is a real module graph.
