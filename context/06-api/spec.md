@@ -7,7 +7,7 @@ and [0014](../.decisions/0014-a-version-is-a-module-and-peer-code-is-executed.md
 
 The exact spelling below is illustrative. What is normative is the shape: a Step
 is a named binding, a dependency is a reference to a binding, a revision is an
-operation on a predecessor value, and everything is pure construction.
+operation on a parent value, and everything is pure construction.
 
 ## The module a plan imports
 
@@ -57,8 +57,8 @@ handle, shown wherever a Plan is listed or referenced in place of the hash.
 
 ## A revision
 
-A revision imports its predecessor and is an operation on it. It carries every
-Step of the predecessor forward, and offers only edits, additions, and
+A revision imports its parent and is an operation on it. It carries every
+Step of the parent forward, and offers only edits, additions, and
 retirements — there is no parameter that removes a Step, so a Step cannot go
 missing while a plan is rewritten.
 
@@ -83,7 +83,7 @@ export default prior.revise({
 })
 ```
 
-`prior.steps.fix` refers to the carried-forward Step through the predecessor, so
+`prior.steps.fix` refers to the carried-forward Step through the parent, so
 an edit cannot target a Step that is not there or invent a new one. `.with(...)`
 changes work, acceptance, or dependencies; it cannot change identity, because
 identity is the binding and the binding is unchanged. An *added* Step is declared
@@ -97,8 +97,8 @@ case.
 
 ## A reconciliation
 
-A reconciliation is a revision with more than one predecessor. Every Step of
-every predecessor is carried forward, so nothing is lost by choosing a side; the
+A reconciliation is a revision with more than one parent. Every Step of
+every parent is carried forward, so nothing is lost by choosing a side; the
 only thing the version states is what changed.
 
 ```ts
@@ -138,15 +138,16 @@ why the other Plan must be present to evaluate this one. A machine that has not
 received that Plan (the one whose goal is "cut the release branch") cannot read
 this one at all, and reports it as Unresolved rather than showing an incomplete
 graph. The imported version is a reference,
-not a predecessor: it does not become a parent of the importing version, and its
-absence-of-admission there is an error, not an uncommitted-predecessor.
+not a parent: it does not become a parent of the importing version, and its
+absence-of-admission there is an error, not an uncommitted-parent.
 
 A Step **depending on** a Step in another Plan — `dependsOn:
 [release.steps.branchCut]` — is a different and larger thing, and is **not yet
 supported**. A dependency is validated against the importing version's own
 Steps, and readiness folds within one Plan; a dependency edge that crosses Plans
-raises questions neither answers — whether the other Plan's Step gates this one,
-how readiness folds across Plans, what an out-of-Plan retirement does here. Those
+raises questions neither answers — whether the other Plan's Step blocks this one
+until accepted, how readiness folds across Plans, what an out-of-Plan retirement
+does here. Those
 are open (DQ11). A cross-plan *reference* resolves today; a cross-plan
 *dependency edge* does not.
 

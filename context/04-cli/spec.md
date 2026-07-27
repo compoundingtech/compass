@@ -40,7 +40,7 @@ Authoring *new* content that revises nothing is a different case and is refused
 with a different message. One says "this is already committed"; the other says
 "this changes nothing." Rendering them alike would hide which happened.
 
-Committing an origin — a module with no predecessor — brings a Plan into being,
+Committing an origin — a module with no parent — brings a Plan into being,
 and its identity is derived then: the PlanId is the hash of that origin
 (decision 0017). The operator names nothing. Afterwards a Plan is addressed by
 its `goal` where a person is reading and by its PlanId where exactness is
@@ -109,6 +109,7 @@ output, so it is a first-class command rather than a verbose mode.
 
 ## Errors
 
-A rejected mutation reports what was rejected and why, and states plainly that
-nothing was recorded. Ambiguity about whether a failed write partially applied
-is the worst outcome an append-only store can present.
+A rejected write — a Commit or a progress append — reports what was rejected and
+why, and states plainly that nothing was recorded. Ambiguity about whether a
+failed write partially applied is the worst outcome an append-only store can
+present.

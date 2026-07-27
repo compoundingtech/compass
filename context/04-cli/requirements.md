@@ -29,9 +29,9 @@
   would teach operators to treat it as breakage. _refines: CMP-R04._
 
 - **CMP.CLI-R05 Answers carry their reasons.** Readiness renders the
-  unsatisfied dependencies and gates alongside its answer, and verification
-  renders what is broken and where. An unexplained answer is not usable.
-  _refines: CMP-R01, CMP-R07._
+  unsatisfied dependencies and unmet criteria alongside its answer, and
+  verification renders what is broken and where. An unexplained answer is not
+  usable. _refines: CMP-R01, CMP-R07._
 
 - **CMP.CLI-R06 Inspection is separated from authorship.** Commands that only
   read are distinguishable from commands that write permanent content, and the
@@ -52,7 +52,7 @@
   can be derived from state the CLI can already reach, the CLI derives it rather
   than accepting it. A caller naming a Plan must not also be asked for its
   sequence or its file layout. Every such argument is a chance to supply the one
-  wrong answer, and it is a chance the tool created. A revision's predecessor is
+  wrong answer, and it is a chance the tool created. A revision's parent is
   neither derived nor asked for: it is written in the revision itself, which is
   what makes a retry repeat rather than drift. _refines: CMP-R10._
 
@@ -77,7 +77,7 @@
   did not revise. The two must not report alike. _refines: CMP-R02._
 
 - **CMP.CLI-R13 What a commit would do is inspectable before it happens.** The
-  structural change authored content makes against its predecessors is
+  structural change authored content makes against its parents is
   reportable without committing, since under no-delete replication a commit
   cannot be walked back. Establishing it means evaluating the content, so this
   is a read that runs a program and is subject to the same bound as any other.

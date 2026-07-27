@@ -68,7 +68,7 @@ with no network and no sync mechanism:
 catalog A ──copy──▶ catalog B     both directions, never removing
 ```
 
-An orphan is produced by copying a subset — a version whose predecessor has not
+An orphan is produced by copying a subset — a version whose parent has not
 arrived yet — which is the real condition rather than a simulation of it. The
 same subset produces an unresolved Plan, and a scenario distinguishes the two by
 what the read returns rather than by how the files were arranged.
@@ -104,7 +104,7 @@ asserted:
 | a hypothesis that dies | the Rationale chain is the artifact — CMP-R03 |
 | two machines, one plan | divergence survives replication — CMP-R04, CMP.DM-R04 |
 | staleness, not disagreement | an orphan is distinguished from divergence — CMP.DM-R06 |
-| the crash-retry | a repeated mutation records once — CMP.DM-R07a, CMP.CLI-R12 |
+| the crash-retry | a repeated Commit records once — CMP.DM-R07a, CMP.CLI-R12 |
 | the same work, said better | identity survives rewording — CMP.DM-R08 |
 | a step nobody can drop | dropping is unrepresentable — CMP.DM-R07c, CMP.EVAL-R09 |
 | a step is retired | dependents are stranded visibly — CMP.DM-R05b |

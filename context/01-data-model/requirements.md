@@ -10,7 +10,7 @@
 ### Lineage
 
 - **CMP.DM-R01 A Plan is a lineage of versions.** Each version records its
-  predecessors, so the history of intent is reconstructible from the versions
+  parents, so the history of intent is reconstructible from the versions
   alone. _refines: CMP-R02._
 
 - **CMP.DM-R02 Every version carries a Rationale.** The reason for the revision
@@ -22,10 +22,10 @@
   _refines: CMP-R02, CMP-R04._
 
 - **CMP.DM-R04 Divergence is a state, not an error.** Versions sharing a
-  predecessor are both valid and both reported. _refines: CMP-R04._
+  parent are both valid and both reported. _refines: CMP-R04._
 
 - **CMP.DM-R05 Divergence resolves by authorship.** Reconciliation is an
-  ordinary version naming every predecessor it reconciles, with its own
+  ordinary version naming every parent it reconciles, with its own
   Rationale. Nothing reconciles automatically, and a reconciliation may itself
   diverge. _refines: CMP-R03, CMP-R04._
 
@@ -42,15 +42,15 @@
   must be visible at the moment of retirement rather than discovered later
   through readiness that never advances. _refines: CMP-R01._
 
-- **CMP.DM-R06 An absent predecessor is not divergence.** A version whose
-  predecessor is unknown must be distinguished from one that disagrees. The
+- **CMP.DM-R06 An absent parent is not divergence.** A version whose
+  parent is unknown must be distinguished from one that disagrees. The
   first ordinarily means state is still arriving; treating it as the second
   writes permanent intent to resolve a transient condition.
   _refines: CMP-R04, CMP-R05._
 
 - **CMP.DM-R06a An unreadable Plan is distinguished from an incomplete one.** A
   Plan that cannot be evaluated because something it references is absent must
-  be reported as unresolved, distinctly from a version whose predecessor is
+  be reported as unresolved, distinctly from a version whose parent is
   merely missing. The two look alike and are not: an incomplete lineage still
   answers what the Plan says, while an unresolved Plan answers nothing at all.
   Reporting the second as the first invites waiting for a repair that has
@@ -63,11 +63,11 @@
   siblings, since neither observed the other, and where one version does precede
   another the lineage already says so. _refines: CMP-R03, CMP-R04, CMP-R10._
 
-- **CMP.DM-R07a Repeating a mutation does not repeat its effect.** A mutation
+- **CMP.DM-R07a Repeating a Commit does not repeat its effect.** A Commit
   applied twice produces one version. This must follow from the data — an
-  identical mutation yields an identical version, therefore the same identity —
+  identical Commit yields an identical version, therefore the same identity —
   rather than from a token a caller supplies and could supply wrongly. It holds
-  only because a revision states its predecessor as part of its own content: a
+  only because a revision states its parent as part of its own content: a
   base that were read at the moment of application would have moved by the time
   a retry arrived, and the retry would differ from the attempt it repeats.
   _refines: CMP-R02, CMP-R10._
@@ -80,7 +80,7 @@
   The cost is that a deliberate non-change cannot be recorded.
   _refines: CMP-R02, CMP-R03._
 
-- **CMP.DM-R07c A revision carries its predecessor forward.** A revision is
+- **CMP.DM-R07c A revision carries its parent forward.** A revision is
   expressed against the version before it and can edit a Step, add one, or
   retire one. It has no way to remove one. Dropping a Step is therefore not
   something Compass detects and refuses but something a revision cannot express
@@ -126,7 +126,7 @@
   every hash in the lineage stays constant. _refines: CMP-R02, CMP-R07._
 
 - **CMP.DM-R17 A Plan's identity is its origin.** A Plan is identified by the
-  content hash of its origin — the one version with no predecessor. It is
+  content hash of its origin — the one version with no parent. It is
   derived, never declared and never minted, and encodes no location. Two
   versions are the same Plan when they share an origin. A version whose derived
   Plan disagrees with where it is filed is rejected, not reinterpreted.
@@ -205,13 +205,13 @@
 ### Readiness
 
 - **CMP.DM-R14 Readiness is derived.** What can be worked on now follows from
-  the Step graph at head, accepted progress, and gates. It is part of the model,
-  not a projection over it. _refines: CMP-R01._
+  the Step graph at head, accepted progress, and each Step's acceptance
+  criterion. It is part of the model, not a projection over it. _refines: CMP-R01._
 
 - **CMP.DM-R15 Readiness explains itself.** Every answer names the unsatisfied
-  dependencies and gates. An answer that cannot say why is neither trustworthy
-  nor debuggable, and this constrains what an acceptance criterion may express.
-  _refines: CMP-R01._
+  dependencies and unmet criteria. An answer that cannot say why is neither
+  trustworthy nor debuggable, and this constrains what an acceptance criterion
+  may express. _refines: CMP-R01._
 
 - **CMP.DM-R16 Readiness is defined under divergence.** With more than one head
   member, readiness is reported per member and labelled. It never selects a side

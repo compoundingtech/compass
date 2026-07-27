@@ -39,7 +39,7 @@ does not follow from the index: the index makes re-reading cheap and does
 nothing about how many files exist or how many are scanned to discover them.
 
 A summary version is harder here than under an inert format, because a later
-version references its predecessor and evaluating it evaluates the chain. A
+version references its parent and evaluating it evaluates the chain. A
 summary that is not referenced saves nothing, and one that is referenced changes
 what the lineage says.
 

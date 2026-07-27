@@ -2,7 +2,7 @@
 
 > **Role.** The library a Plan imports — the surface through which intent is
 > written as code. It is what makes a Step a named declaration, a dependency a
-> variable, and a revision a function of its predecessor. It realizes the data
+> variable, and a revision a function of its parent. It realizes the data
 > model of [01-data-model](../01-data-model/requirements.md) as a thing an
 > author writes, and its output is evaluated per
 > [decision 0014](../.decisions/0014-a-version-is-a-module-and-peer-code-is-executed.md).
@@ -28,14 +28,14 @@
   exist — caught where it is written — rather than a dangling edge discovered
   later. _refines: CMP-R10._
 
-- **CMP.API-R03 A revision is a function of its predecessor.** Producing a
+- **CMP.API-R03 A revision is a function of its parent.** Producing a
   version from a prior one is an operation *on* that version. It takes edits,
   additions, and retirements, and offers nothing that removes a Step: every Step
-  of the predecessor is carried forward by the operation itself, so a Step
+  of the parent is carried forward by the operation itself, so a Step
   cannot be dropped by omission. _refines: CMP-R02._
 
 - **CMP.API-R04 An edit names the Step it changes.** Editing a carried-forward
-  Step refers to that Step through the predecessor, so the edit cannot silently
+  Step refers to that Step through the parent, so the edit cannot silently
   create a new Step or target one that is not there. What an edit may change is
   the work, the acceptance, and the dependencies; it cannot change identity.
   _refines: CMP-R02, CMP-R10._
@@ -43,7 +43,7 @@
 - **CMP.API-R05 A cross-plan reference is an import.** Referring to another
   Plan's version is importing it. The import is what makes the reference
   checkable rather than spelled, and it is why the other Plan must be present to
-  evaluate this one. The imported version is a reference, never a predecessor of
+  evaluate this one. The imported version is a reference, never a parent of
   the importing version. A Step *depending on* a Step in another Plan is a larger
   feature with unsettled cross-Plan readiness semantics and is deferred (DQ11);
   this requirement covers the reference, not the dependency edge.

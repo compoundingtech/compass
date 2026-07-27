@@ -4,7 +4,7 @@
 [decision 0007](./.decisions/0007-identity-is-derived-never-asserted.md) and
 [decision 0014](./.decisions/0014-a-version-is-a-module-and-peer-code-is-executed.md).
 Identity is a hash of a version's source with nothing excluded, and a revision
-states its own predecessor, so re-submitting the same content yields the same
+states its own parent, so re-submitting the same content yields the same
 identity and therefore one version. A retry whose rationale was reworded is
 closed separately, by refusing a revision that changes no Step and no goal. No
 caller-supplied key exists, because an asserted value can be supplied wrongly
@@ -38,7 +38,7 @@ it.
 
 **DQ04 — Resolved.** See
 [decision 0017](./.decisions/0017-a-plans-identity-is-its-origin.md). A Plan's
-identity is the content hash of its origin (predecessor-less) version — derived,
+identity is the content hash of its origin (parent-less) version — derived,
 never declared or minted, encoding no location. Two versions are the same Plan
 when they share an origin, and the origin's own identity is the PlanId. Human
 readability is carried by the required `goal`, not by the identity, so the
@@ -75,7 +75,7 @@ any other and is documented as such. Progress records are unaffected — Compass
 writes those, so their actor is observed.
 
 **DQ08 — Resolved.** A reconciliation carries forward every Step of every
-predecessor, so nothing can be lost by choosing a side. Where two predecessors
+parent, so nothing can be lost by choosing a side. Where two parents
 define the same Step with *different* content, the reconciliation must state the
 surviving intent with an explicit `edit` for that Step, and is **refused
 otherwise** — naming the Step and both differing sides. A Step only one side
@@ -116,18 +116,18 @@ checkable. A cross-plan *dependency edge* — a Step whose `dependsOn` names a S
 in another Plan — does not work: a dependency is validated against the importing
 version's own Steps, and readiness folds within one Plan. Making the edge real
 raises questions neither mechanism answers: does the other Plan's Step being
-accepted gate this one; how does readiness fold across Plans; what does an
+accepted block this one; how does readiness fold across Plans; what does an
 out-of-Plan retirement do to a dependent here; and what happens when the other
 Plan diverges. Until those are settled the reference is supported and the edge is
 not.
 
 **DQ12 — Does authored content carry variable references, or only the root?**
 CMP.FS-R05 promises machine-agnostic paths via variable references inside
-authored content. In practice a version references its predecessors by *relative*
+authored content. In practice a version references its parents by *relative*
 import and the catalog *root* is environment-resolved, which achieves
 machine-agnosticism without any variable expansion in the module resolver. Either
 the requirement is satisfied by that weaker mechanism and should say so, or
 variable-in-content is a real feature still to build. The relative-import form is
-also what makes the flat per-Plan `versions/` layout load-bearing (a predecessor
+also what makes the flat per-Plan `versions/` layout load-bearing (a parent
 is named by relative path), so this interacts with how a catalog may be
 reorganized.

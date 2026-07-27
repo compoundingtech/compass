@@ -18,10 +18,10 @@ a version whose content does not match its own name — a misfiled version is ne
 reinterpreted into the Plan it was filed under.
 
 `seq` is a reading aid, not a key. Divergent versions may share one, and after a
-reconciliation of unequal lineages it follows the longest predecessor. Nothing
+reconciliation of unequal lineages it follows the longest parent. Nothing
 resolves on `seq`; the hash is the identity.
 
-A version file is a module. A revision refers to its predecessor by referencing
+A version file is a module. A revision refers to its parent by referencing
 that file, so a version's name appears inside its successors — which is why the
 name is fixed at commit and never recomputed.
 
@@ -41,7 +41,7 @@ moves when the bytes move is exactly what makes an alteration of committed
 source visible. A normalization that let identity survive reformatting would
 also let it survive tampering.
 
-Because each version references its predecessors by name, and each name is a
+Because each version references its parents by name, and each name is a
 hash of content, altering any version changes its identity and breaks every
 descendant's reference — so damage is detectable by walking, without a separate
 manifest.
@@ -70,7 +70,7 @@ whose content contradicts their name are rejected with an error naming both.
 Admission looks at bytes and nothing else. It does not evaluate the module, and
 in particular does not require that what the module references be present:
 replication delivers files in no useful order, so a version arrives before its
-predecessor about as often as after. An admission rule that ran the module would
+parent about as often as after. An admission rule that ran the module would
 make delivery order decide what became state, and would reject a perfectly good
 version for a gap that closes on the next sync.
 
@@ -90,12 +90,12 @@ Head is computed by walking. Nothing on disk records it, so concurrent writers
 have nothing to contend on.
 
 ```text
-versions/003-a1b2….ts     predecessor = 002-…
-versions/003-c3d4….ts     predecessor = 002-…            ← divergence: shared predecessor
-versions/004-e5f6….ts     predecessors = [a1b2…, c3d4…]  ← reconciliation
+versions/003-a1b2….ts     parent = 002-…
+versions/003-c3d4….ts     parent = 002-…            ← divergence: shared parent
+versions/004-e5f6….ts     parents = [a1b2…, c3d4…]  ← reconciliation
 ```
 
-An orphan is a version referencing a predecessor no local file provides. It is
+An orphan is a version referencing a parent no local file provides. It is
 reported as incomplete state, not as divergence, and never offered
 reconciliation as its repair.
 
@@ -122,14 +122,14 @@ edits or deletes a damaged version:
   of repairing it.
 
 Instead a new version records the damage, states what is known of the lost
-intent, and continues from the last intact predecessor. The surviving record of
+intent, and continues from the last intact parent. The surviving record of
 reasons is preserved, which is the property worth protecting; the damaged bytes
 remain on disk and are excluded from interpretation.
 
 Repair is more urgent than a broken link would suggest. A version that cannot be
 resolved cannot be evaluated, and every later version references it, so damage
 mid-lineage does not leave a Plan partially readable — it leaves it unreadable
-to the tip. The repair version, continuing from the last intact predecessor, is
+to the tip. The repair version, continuing from the last intact parent, is
 what restores a readable frontier.
 
 The same mechanism is the only response to content that should not have been

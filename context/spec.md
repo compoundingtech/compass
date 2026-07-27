@@ -74,8 +74,8 @@ Every change passes through the Plan Surface; nothing writes Compass state
 around it, because a second writer would be a second authority.
 
 Other systems compose by reference. They may record operational facts citing a
-Receipt, but such a fact never becomes Compass state, and its absence or failure
-never changes a Compass result.
+Plan Version, but such a fact never becomes Compass state, and its absence or
+failure never changes a Compass result.
 
 Compass owns two regimes, deliberately distinct: **intent**, which is immutable
 and versioned, and **progress**, which is append-only and operational. Neither
@@ -106,7 +106,7 @@ records what that alternative looks like.
 
 A Plan created, revised, diverged, and reconciled. The exact spelling of the
 authoring API is illustrative; that intent is a module, that a Step is a named
-declaration, and that a revision is a function of its predecessor are not.
+declaration, and that a revision is a function of its parent are not.
 
 **1 — created.** Each Step is a declaration, and its name is its identity.
 
@@ -138,7 +138,7 @@ reference. There is no identifier to mistype and none to invent: a dependency
 that does not resolve is not a dangling edge discovered later, it is a name that
 does not exist, and it fails where it is written.
 
-**2 — revised.** The revision imports its predecessor and is a function of it.
+**2 — revised.** The revision imports its parent and is a function of it.
 
 ```ts
 import prior from "./001-9f3c….ts"
@@ -173,7 +173,7 @@ Both survive; both are reported with their authors and reasons. Nobody has to
 reconstruct why the plan disagreed, because both sides said so at the time.
 
 **4 — reconciled.** A reconciliation is an ordinary revision with more than one
-predecessor, and a cross-plan reference is an ordinary import.
+parent, and a cross-plan reference is an ordinary import.
 
 ```ts
 import { reconcile } from "compass"
@@ -194,7 +194,7 @@ export default reconcile({
 })
 ```
 
-Every Step of every predecessor is carried forward, so the only thing this
+Every Step of every parent is carried forward, so the only thing this
 version states is what actually changed: the fuzz step waits on the guard.
 Neither side's work can be dropped by choosing the other, which was the one
 operation capable of losing intent without leaving a trace of what it lost.

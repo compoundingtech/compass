@@ -10,7 +10,7 @@ for one layer:
 | --- | --- |
 | [01-data-model](./01-data-model/requirements.md) | what a Plan is, independent of how it is stored |
 | [02-artifacts](./02-artifacts/requirements.md) | one realization of that model as stored modules, and the derived index over them |
-| [03-surface](./03-surface/requirements.md) | the logical query and mutation surface |
+| [03-surface](./03-surface/requirements.md) | the logical query and write surface |
 | [04-cli](./04-cli/requirements.md) | the operator surface over that port |
 | [05-integrations](./05-integrations/requirements.md) | contracts Compass consumes rather than defines |
 | [06-api](./06-api/requirements.md) | the library through which intent is written as code |
@@ -94,8 +94,8 @@ for one layer:
   another tool's paths, storage layouts, event envelopes, or private schemas.
 
 - **CMP-R09 Composition is by reference.** Integrations must exchange stable
-  references, mutations, queries, and receipts. They must not share mutable
-  files or mutate Compass state directly. A reference is stable — it survives
+  references, commits, queries, and version identities. They must not share
+  mutable files or write Compass state directly. A reference is stable — it survives
   revision and names one thing forever — but it is not required to be
   meaningless: a Step is referenced by the name it was declared under, which a
   reader can read.

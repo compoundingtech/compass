@@ -16,7 +16,7 @@ at the same time, each from `001`, neither having seen the other's work:
   adds a grammar guard for unterminated groups.
 
 When the two catalogs replicate together, both `002` versions arrive. They share
-predecessor `001`, so they are a **divergence** — not a sequence, a disagreement.
+parent `001`, so they are a **divergence** — not a sequence, a disagreement.
 Both survive; nothing is silently dropped.
 
 ```
@@ -31,7 +31,7 @@ Both survive; nothing is silently dropped.
 
 ## The reconciliation
 
-`003` is an ordinary revision with **two** predecessors. Every step of both sides
+`003` is an ordinary revision with **two** parents. Every step of both sides
 is carried forward — the fuzz step from A and the guard from B — so nothing is
 lost by "choosing a side", because there is no way to choose a side. The only
 thing `003` states is what actually changed: the fuzz run now depends on the
@@ -45,10 +45,10 @@ added.
 ## What to look at in the files
 
 - **Two `002-` files with different hashes**, both importing `001`. That is a
-  divergence on disk — same predecessor, two contents, both admitted. Union
+  divergence on disk — same parent, two contents, both admitted. Union
   replication keeps both; neither overwrites the other.
 - **`003` imports both sides** and lists them in `revises`. A reconciliation is a
-  revision that names more than one predecessor; there is nothing else special
+  revision that names more than one parent; there is nothing else special
   about it.
 - **The reconciliation edits one step** (`fuzz.with({ dependsOn: [...] })`) and
   mentions nothing else. Everything unmentioned is carried forward. A reader sees
