@@ -131,7 +131,9 @@ pub fn eval_plan_file(entry: &Path) -> Result<HashMap<PathBuf, SemVersion>, Eval
     let load_err: Arc<Mutex<Option<EvalError>>> = Arc::new(Mutex::new(None));
     {
         rt.set_loader(
-            GraphResolver,
+            GraphResolver {
+                err: load_err.clone(),
+            },
             SourceLoader {
                 captured: captured.clone(),
                 err: load_err.clone(),
@@ -175,7 +177,12 @@ pub fn eval_plan_file(entry: &Path) -> Result<HashMap<PathBuf, SemVersion>, Eval
 
     let locked = Context::custom::<(intrinsic::Json, intrinsic::Promise, intrinsic::Proxy)>(&rt)
         .map_err(|e| EvalError::Failed(format!("locked context: {e}")))?;
-    rt.set_loader(GraphResolver, BytecodeLoader { compiled });
+    rt.set_loader(
+        GraphResolver {
+            err: Arc::new(Mutex::new(None)),
+        },
+        BytecodeLoader { compiled },
+    );
 
     locked.with(|ctx| -> Result<HashMap<PathBuf, SemVersion>, EvalError> {
         lock_globals(&ctx)?;
@@ -581,19 +588,174 @@ enum Resolved {
 }
 
 /// Resolve an import specifier against the importing file.
+///
+/// A plan may import only two things (decision 0011's capability boundary,
+/// decision 0014's locked evaluation): the bare `compass` prelude, and a
+/// content-addressed plan-version module — either a same-plan sibling
+/// `./<seq>-<hash>.ts` or a cross-plan version `../../<plan>/versions/<seq>-<hash>.ts`.
+/// Anything else — an absolute path, a `..` escaping the catalog, a name that is
+/// not content-addressed — is refused here, so a plan cannot name a location on
+/// this machine and thereby acquire a filesystem-read capability. Admission (the
+/// content hash matching the filename, per 02-artifacts) is enforced by the
+/// loader once the file is read.
+///
+/// Resolution of a *well-formed* version reference must still succeed when the
+/// file is merely absent, so the loader is invoked and reports it as Unresolved
+/// (a predecessor that has not arrived) rather than being failed here.
+///
+/// The path is normalised lexically, never against the real filesystem, so no
+/// symlink or `..` can redirect resolution outside the catalog.
 fn resolve_spec(base: &Path, spec: &str) -> Result<Resolved, EvalError> {
     if spec == COMPASS_SPECIFIER {
         return Ok(Resolved::Compass);
     }
-    let dir = base.parent().unwrap_or_else(|| Path::new("."));
-    let joined = dir.join(spec);
-    // Resolution must succeed even when the file is absent, so that the loader
-    // is invoked and reports it as Unresolved (a predecessor that has not
-    // arrived) rather than the resolver failing it as a generic module error.
-    match std::fs::canonicalize(&joined) {
-        Ok(canon) => Ok(Resolved::File(canon)),
-        Err(_) => Ok(Resolved::File(joined)),
+    let ext = crate::model::VERSION_EXT;
+    if Path::new(spec).is_absolute() {
+        return Err(EvalError::Failed(format!(
+            "illegitimate import `{spec}`: a plan may import only the `compass` prelude and \
+             content-addressed plan versions, never an absolute path (decision 0011)"
+        )));
     }
+    // The basename must name content: `<seq>-<hash>.ts`.
+    let file = spec.rsplit('/').next().unwrap_or(spec);
+    if crate::model::parse_filename(file).is_none() {
+        return Err(EvalError::Failed(format!(
+            "illegitimate import `{spec}`: an import must name a content-addressed plan version \
+             (`<seq>-<hash>.{ext}`) or the `compass` prelude (decision 0011)"
+        )));
+    }
+    let dir = base.parent().unwrap_or_else(|| Path::new("."));
+    let target = normalize_lexical(dir, spec).ok_or_else(|| {
+        EvalError::Failed(format!(
+            "illegitimate import `{spec}`: a relative reference must not escape the catalog \
+             (decision 0011)"
+        ))
+    })?;
+    // Exactly two legitimate shapes: a same-directory sibling (a same-plan
+    // version) or a cross-plan version under `<plans>/<plan>/versions/`.
+    if !is_sibling(&target, dir) && !is_cross_plan_version(&target, base) {
+        return Err(EvalError::Failed(format!(
+            "illegitimate import `{spec}`: only a same-plan sibling `./<seq>-<hash>.{ext}` or a \
+             cross-plan `../../<plan>/versions/<seq>-<hash>.{ext}` is permitted (decision 0011)"
+        )));
+    }
+    Ok(Resolved::File(target))
+}
+
+/// Fold `.` and `..` in `dir/spec` purely lexically — never touching the
+/// filesystem, so no symlink can redirect the result. Returns `None` if a `..`
+/// would climb above the filesystem root, which is always an illegitimate escape.
+pub(crate) fn normalize_lexical(dir: &Path, spec: &str) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut root = PathBuf::new();
+    let mut comps: Vec<std::ffi::OsString> = Vec::new();
+    let push = |c: Component<'_>, comps: &mut Vec<std::ffi::OsString>| -> Option<()> {
+        match c {
+            Component::CurDir => Some(()),
+            Component::ParentDir => comps.pop().map(|_| ()),
+            Component::Normal(s) => {
+                comps.push(s.to_os_string());
+                Some(())
+            }
+            _ => Some(()),
+        }
+    };
+    for c in dir.components() {
+        match c {
+            Component::Prefix(p) => root.push(p.as_os_str()),
+            Component::RootDir => root.push(std::path::MAIN_SEPARATOR.to_string()),
+            other => push(other, &mut comps)?,
+        }
+    }
+    for c in Path::new(spec).components() {
+        match c {
+            // A spec must be relative; an absolute component is rejected earlier,
+            // but guard here too.
+            Component::Prefix(_) | Component::RootDir => return None,
+            other => push(other, &mut comps)?,
+        }
+    }
+    let mut out = root;
+    for c in comps {
+        out.push(c);
+    }
+    Some(out)
+}
+
+/// A same-plan sibling: the resolved file sits in the importer's own directory.
+fn is_sibling(target: &Path, dir: &Path) -> bool {
+    target.parent() == Some(dir)
+}
+
+/// A cross-plan version: the resolved file is `<plans>/<plan>/versions/<file>`,
+/// under the *same* `plans` directory the importer itself lives beneath. This
+/// permits a reference into another plan's versions/ while refusing anything
+/// that is not a plan version under the shared catalog.
+fn is_cross_plan_version(target: &Path, base: &Path) -> bool {
+    let plans_of = |file: &Path| -> Option<PathBuf> {
+        let versions = file.parent()?;
+        if versions.file_name()?.to_str()? != "versions" {
+            return None;
+        }
+        let plan_dir = versions.parent()?;
+        // A single, concrete plan segment.
+        plan_dir.file_name()?.to_str()?;
+        let plans = plan_dir.parent()?;
+        if plans.file_name()?.to_str()? != "plans" {
+            return None;
+        }
+        Some(plans.to_path_buf())
+    };
+    match (plans_of(target), plans_of(base)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// The plan a version import targets, derived from the importing file's location
+/// and the specifier — `None` when the specifier is not a version reference or
+/// its target plan cannot be determined (e.g. a sibling outside the catalog
+/// layout, which the caller treats as the current plan). This is the single
+/// source of truth both the resolver (Fix 1) and commit's predecessor logic
+/// (Fix 2) classify against, so they cannot drift.
+pub(crate) fn import_target_plan(base: &Path, spec: &str) -> Option<String> {
+    let dir = base.parent().unwrap_or_else(|| Path::new("."));
+    let target = normalize_lexical(dir, spec)?;
+    let versions = target.parent()?;
+    if versions.file_name()?.to_str()? != "versions" {
+        return None;
+    }
+    let plan_dir = versions.parent()?;
+    Some(plan_dir.file_name()?.to_str()?.to_string())
+}
+
+/// Verify a resolved import is an admitted plan version: its content hash must
+/// match the hash embedded in its filename (02-artifacts). A missing file is
+/// Unresolved (a predecessor that has not arrived); present-but-mismatched is a
+/// Failed read (a non-admitted or tampered file the plan must not evaluate).
+fn verify_admitted(name: &str) -> Result<(), EvalError> {
+    let path = Path::new(name);
+    let file = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    let (_seq, want) = crate::model::parse_filename(file).ok_or_else(|| {
+        EvalError::Failed(format!(
+            "import `{name}` is not a content-addressed plan version"
+        ))
+    })?;
+    let bytes = std::fs::read(path).map_err(|_| {
+        EvalError::Unresolved(format!("{name} has not arrived (or was never committed)"))
+    })?;
+    let actual = crate::sha256::sha256_hex(&bytes);
+    if !actual.starts_with(&want) {
+        return Err(EvalError::Failed(format!(
+            "import `{file}` is not admitted: its content hashes to {} but its name claims {want} \
+             (02-artifacts)",
+            &actual[..want.len().min(actual.len())]
+        )));
+    }
+    Ok(())
 }
 
 fn canonicalize(path: &Path) -> Result<PathBuf, EvalError> {
@@ -620,7 +782,12 @@ fn path_name(path: &Path) -> String {
 // The loader over precompiled bytecode
 // ---------------------------------------------------------------------------
 
-struct GraphResolver;
+/// Resolves import specifiers to the two legitimate kinds of module and records
+/// a clear reason when it refuses one, so an illegitimate import surfaces as the
+/// resolver's own message rather than a generic host error.
+struct GraphResolver {
+    err: Arc<Mutex<Option<EvalError>>>,
+}
 
 impl Resolver for GraphResolver {
     fn resolve<'js>(
@@ -633,10 +800,20 @@ impl Resolver for GraphResolver {
         if name == COMPASS_SPECIFIER {
             return Ok(COMPASS_SPECIFIER.to_string());
         }
+        // A top-level import (`Module::import` with no importer) names a module
+        // this host already resolved — the entry module itself. It is not a raw
+        // specifier an author wrote, so it is returned as its own identity; only
+        // WE issue such an import, never a plan.
+        if base.is_empty() {
+            return Ok(name.to_string());
+        }
         match resolve_spec(Path::new(base), name) {
             Ok(Resolved::Compass) => Ok(COMPASS_SPECIFIER.to_string()),
             Ok(Resolved::File(p)) => Ok(p.to_string_lossy().to_string()),
-            Err(_) => Err(JsError::new_resolving(base.to_string(), name.to_string())),
+            Err(e) => {
+                *self.err.lock().unwrap() = Some(e);
+                Err(JsError::new_resolving(base.to_string(), name.to_string()))
+            }
         }
     }
 }
@@ -656,6 +833,15 @@ impl Loader for SourceLoader {
         name: &str,
         _attrs: Option<rquickjs::loader::ImportAttributes<'js>>,
     ) -> rquickjs::Result<Module<'js, rquickjs::module::Declared>> {
+        // Only imports flow through the loader; the entry module is declared
+        // directly, so admission is enforced here — on imported versions only,
+        // never on the (possibly not-yet-content-addressed) entry being authored.
+        if name != COMPASS_SPECIFIER {
+            if let Err(e) = verify_admitted(name) {
+                *self.err.lock().unwrap() = Some(e);
+                return Err(JsError::new_loading(name.to_string()));
+            }
+        }
         let js = match build_js(name) {
             Ok(js) => js,
             Err(e) => {
