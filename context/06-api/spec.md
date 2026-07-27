@@ -50,6 +50,11 @@ export default plan({
 A Step declared inline in the `steps` array without a binding has no identity and
 is refused: identity must be a name a reader and a successor can refer to.
 
+`plan({...})` declares no identity of its own. A Plan's identity is the content
+hash of this origin version, derived at commit (decision 0017) — there is no `id`
+to write and none to get wrong. `goal` is required and is the Plan's human
+handle, shown wherever a Plan is listed or referenced in place of the hash.
+
 ## A revision
 
 A revision imports its predecessor and is an operation on it. It carries every

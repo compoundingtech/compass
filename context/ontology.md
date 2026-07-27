@@ -110,9 +110,13 @@ is retired, and a Step declared without a name has no identity and is refused.
 _Avoid_: minted id, content hash, array index, title slug, opaque token
 
 **PlanRef**:
-A stable reference to a Plan. It encodes no filesystem, database, transport, or
-host location. What determines it is unresolved; see DQ04.
-_Avoid_: plan path, catalog path, file name
+A Plan's identity: the content hash of its origin — the single predecessor-less
+version. It is derived, never declared and never minted, and encodes no
+filesystem, database, transport, or host location. Two versions are the same
+Plan when they share an origin; the origin version's own identity and the
+PlanRef are the same hash. It is machine-facing; the human handle for a Plan is
+its `goal`.
+_Avoid_: plan path, catalog path, file name, plan name, declared id
 
 **Catalog**:
 The on-disk tree of Plans. Discovery is content-based: the tree is walked and

@@ -36,18 +36,13 @@ cannot report why it failed is unusable regardless of expressive power. This is
 the largest open question in the model, and the contract is incomplete without
 it.
 
-**DQ04 — What determines a Plan's identity?**
-Decision 0012 settles Step identity — the name it is declared under, qualified
-by its Plan — and removes the minting mechanism that supplied both Step and Plan
-references. It does not say what supplies a Plan reference instead, and
-"qualified by its Plan" presupposes a Plan handle that nothing defines.
-
-The candidates differ in what they cost. A declared name has the same virtues it
-has for a Step and needs somewhere to be declared that is not itself a Plan. A
-content hash of the first version is derived and stable but unreadable and
-unavailable before the first version exists, which collides with CMP-R11. A path
-segment makes identity a location, which CMP.FS-R05 and the ontology both
-refuse.
+**DQ04 — Resolved.** See
+[decision 0017](./.decisions/0017-a-plans-identity-is-its-origin.md). A Plan's
+identity is the content hash of its origin (predecessor-less) version — derived,
+never declared or minted, encoding no location. Two versions are the same Plan
+when they share an origin, and the origin's own identity is the PlanRef. Human
+readability is carried by the required `goal`, not by the identity, so the
+identity need not be readable and is fully derived.
 
 **DQ05 — What is a Plan scoped to?**
 The catalog is a single tree replicating across machines. Unresolved: whether a
