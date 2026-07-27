@@ -1,6 +1,6 @@
 # DELTA-001: Repair has no command
 
-Status: open
+Status: narrowed
 
 ## Divergence
 
@@ -18,15 +18,22 @@ irreversible operation one keystroke from the safe one.
 
 ## Implementation
 
-`compass verify` detects and reports rejected files and orphans. There is no
-`compass repair`. The repair *path* exists — an operator can author a
-damage-recording version with `compass revise` — but it is neither named,
-guided, nor distinguished from ordinary revision, so nothing enforces the
-separation the spec relies on.
+`compass verify` is read-only and reports rejected files, orphans, and a
+frontier that will not evaluate. `compass repair` now exists as a *distinct*
+command: it re-runs verification and **refuses when nothing is wrong** (so the
+irreversible operation is never one keystroke from the safe one), identifies the
+last intact predecessor, and lists which versions are unverifiable.
+
+What it does not yet do is author the damage-recording version itself: it
+scaffolds the `prior.revise({...})` continuation from the last intact
+predecessor and directs the operator to `compass commit` it. The separation the
+spec relies on is enforced (verify is read-only; repair is its own command that
+refuses on a clean catalog); the authoring is guided rather than performed.
 
 ## Direction
 
-update implementation
+update implementation — close the remaining gap by having `repair` write the
+damage-recording version directly rather than scaffolding it.
 
 ## Resolution Signal
 
