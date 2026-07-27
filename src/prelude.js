@@ -173,24 +173,111 @@ function reviseOne(base, rev) {
   });
 }
 
+// A canonical, order-insensitive serialization of a criterion, so two sides
+// that authored the same acceptance compare equal regardless of the order of
+// `all`/`any` arguments or of an atom's attributes.
+function canonPred(p) {
+  if (!p || typeof p !== "object") return JSON.stringify(p);
+  if (p.__k === "atom") {
+    const keys = Object.keys(p.attrs || {}).sort();
+    const parts = [];
+    for (let i = 0; i < keys.length; i++) parts.push(keys[i] + "=" + String(p.attrs[keys[i]]));
+    return "atom(" + String(p.kind) + ";" + parts.join(",") + ")";
+  }
+  if (p.__k === "all" || p.__k === "any") {
+    const parts = [];
+    const args = p.args || [];
+    for (let i = 0; i < args.length; i++) parts.push(canonPred(args[i]));
+    parts.sort();
+    return p.__k + "(" + parts.join("|") + ")";
+  }
+  if (p.__k === "not") return "not(" + canonPred(p.arg) + ")";
+  return JSON.stringify(p);
+}
+
+// The identity-independent *content* of a step: what an author could disagree
+// about. Two carried-forward copies with the same content are not a conflict.
+function canonStep(s) {
+  const deps = [];
+  const d = s.dependsOn || [];
+  for (let i = 0; i < d.length; i++) {
+    if (d[i] && d[i].__name !== undefined) deps.push(d[i].__name);
+  }
+  deps.sort();
+  const supersedes =
+    s.supersedes && s.supersedes.__name !== undefined ? s.supersedes.__name : null;
+  return JSON.stringify({
+    work: s.work,
+    dependsOn: deps,
+    supersedes: supersedes,
+    retired: !!s.retired,
+    accept: canonPred(s.accept),
+  });
+}
+
 // A reconciliation is a revision with more than one predecessor. Every step of
 // every side is carried forward, keyed by identity, so nothing is lost by
 // choosing a side; the version states only what it changes.
+//
+// Where two sides define the SAME step with DIFFERENT content, keeping one and
+// dropping the other would silently lose intent — the cardinal failure the
+// reconciliation design exists to prevent (DQ08). Such a conflict is refused
+// unless the reconciliation carries an explicit `edit` for that step stating the
+// surviving intent. A step only one side has, or that both sides left identical,
+// is not a conflict and is carried forward unchanged.
 function reconcile(rev) {
   const sides = rev.revises || [];
-  const seen = {};
-  const carried = [];
+
+  // Steps the reconciliation explicitly resolves via an edit.
+  const resolved = {};
+  const edits = rev.edit || [];
+  for (let i = 0; i < edits.length; i++) {
+    if (edits[i] && edits[i].__name !== undefined) resolved[edits[i].__name] = true;
+  }
+
+  const firstStep = {}; // name -> the first carried copy
+  const firstContent = {}; // name -> its canonical content
+  const firstSide = {}; // name -> the side index it first came from
+  const order = [];
   for (let i = 0; i < sides.length; i++) {
     const ss = sides[i].__steps || [];
     for (let j = 0; j < ss.length; j++) {
       const s = ss[j];
       if (s.__name === undefined) continue;
-      if (!Object.prototype.hasOwnProperty.call(seen, s.__name)) {
-        seen[s.__name] = true;
-        carried.push(cloneCarry(s));
+      const content = canonStep(s);
+      if (!Object.prototype.hasOwnProperty.call(firstStep, s.__name)) {
+        firstStep[s.__name] = cloneCarry(s);
+        firstContent[s.__name] = content;
+        firstSide[s.__name] = i;
+        order.push(s.__name);
+      } else if (content !== firstContent[s.__name] && !resolved[s.__name]) {
+        throw new Error(
+          "reconciliation conflict on step " +
+            JSON.stringify(s.__name) +
+            ": side " +
+            (firstSide[s.__name] + 1) +
+            " and side " +
+            (i + 1) +
+            " define it differently and no explicit edit resolves it. " +
+            "side " +
+            (firstSide[s.__name] + 1) +
+            " = " +
+            firstContent[s.__name] +
+            "; side " +
+            (i + 1) +
+            " = " +
+            content +
+            ". Author an explicit edit for " +
+            JSON.stringify(s.__name) +
+            " stating the surviving intent.",
+        );
       }
     }
   }
+
+  const carried = [];
+  for (let k = 0; k < order.length; k++) carried.push(firstStep[order[k]]);
+
   const steps = applyOps(carried, rev);
   const goal = "goal" in rev ? rev.goal : sides.length > 0 ? sides[0].goal : undefined;
   return makePlan({

@@ -79,16 +79,19 @@ separately from the claimed one, or whether authorship is simply a claim like
 any other and is documented as such. Progress records are unaffected — Compass
 writes those, so their actor is observed.
 
-**DQ08 — How does a reconciliation resolve a Step both sides edited?**
-A reconciliation carries forward every Step of every predecessor, so nothing can
-be lost by choosing a side. That leaves the case where two predecessors edited
-the same Step differently, and the carried-forward value is ambiguous.
+**DQ08 — Resolved.** A reconciliation carries forward every Step of every
+predecessor, so nothing can be lost by choosing a side. Where two predecessors
+define the same Step with *different* content, the reconciliation must state the
+surviving intent with an explicit `edit` for that Step, and is **refused
+otherwise** — naming the Step and both differing sides. A Step only one side
+carries, or that both sides left identical, is not a conflict and is carried
+forward unchanged.
 
-Unresolved: whether the reconciliation must state the surviving intent for every
-such Step and is refused otherwise, or whether an unstated conflict resolves by
-some rule. The first is consistent with divergence resolving by authorship; the
-second would let a reconciliation assert intent nobody wrote, which is the
-failure the whole divergence model exists to avoid.
+This takes the first of the two candidates, and for the reason the second was
+suspect: silently keeping one side and dropping the other would let a
+reconciliation assert intent nobody wrote, which is the exact failure the whole
+divergence model exists to avoid. Refusal is consistent with divergence
+resolving by authorship — the surviving intent is authored, never inferred.
 **DQ09 — What are the evaluation bounds, and who sets them?**
 Decision 0014 requires that evaluation be bounded in time and memory and that
 exceeding a bound be reported. It does not say what the bounds are.
