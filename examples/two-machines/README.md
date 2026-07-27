@@ -57,6 +57,6 @@ added.
 ## Files
 
 - [`001-8e528ff9bc56.ts`](./catalog/plans/pl_nested_groups/versions/001-8e528ff9bc56.ts) — the shared base
-- [`002-7280a933f7cc.ts`](./catalog/plans/pl_nested_groups/versions/002-7280a933f7cc.ts) — machine A: fuzz
-- [`002-ff95b74b4e9f.ts`](./catalog/plans/pl_nested_groups/versions/002-ff95b74b4e9f.ts) — machine B: guard
-- [`003-79f571386a40.ts`](./catalog/plans/pl_nested_groups/versions/003-79f571386a40.ts) — reconciliation
+- [`002-2c922cb978de.ts`](./catalog/plans/pl_nested_groups/versions/002-2c922cb978de.ts) — machine A: fuzz
+- [`002-e5d27ee538bf.ts`](./catalog/plans/pl_nested_groups/versions/002-e5d27ee538bf.ts) — machine B: guard
+- [`003-037d5ddb9db7.ts`](./catalog/plans/pl_nested_groups/versions/003-037d5ddb9db7.ts) — reconciliation

@@ -40,10 +40,14 @@
   the work, the acceptance, and the dependencies; it cannot change identity.
   _refines: CMP-R02, CMP-R10._
 
-- **CMP.API-R05 A cross-plan reference is an import.** Depending on a Step in
-  another Plan is importing that Plan's version and referring to the Step. This
-  is what makes the reference checkable, and it is why the other Plan must be
-  present to evaluate this one. _refines: CMP-R08, CMP-R09._
+- **CMP.API-R05 A cross-plan reference is an import.** Referring to another
+  Plan's version is importing it. The import is what makes the reference
+  checkable rather than spelled, and it is why the other Plan must be present to
+  evaluate this one. The imported version is a reference, never a predecessor of
+  the importing version. A Step *depending on* a Step in another Plan is a larger
+  feature with unsettled cross-Plan readiness semantics and is deferred (DQ11);
+  this requirement covers the reference, not the dependency edge.
+  _refines: CMP-R08, CMP-R09._
 
 - **CMP.API-R06 The evidence vocabulary is open and typed.** The constructors
   for acceptance evidence are values a use case defines, not a fixed set the API

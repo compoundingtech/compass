@@ -5,9 +5,10 @@ catalog: the version files are named by the hash of their own bytes, and each
 revision imports its predecessor by that name — so the lineage is genuine, not
 illustrative.
 
-They are point-in-time snapshots. Compass is early and does not yet evaluate
-these; they show what authoring a plan looks like and are the reference the
-design is measured against. The authoring surface is specified in
+Compass evaluates these: they are the acceptance suite (`tests/examples.rs`).
+Each version file is read by evaluating it in the embedded engine, and reading
+reproduces its content-hash filename. They also show what authoring a plan looks
+like. The authoring surface is specified in
 [`context/06-api/`](../context/06-api/spec.md).
 
 | Example | Domain | What it shows |

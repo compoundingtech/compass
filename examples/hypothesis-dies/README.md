@@ -50,5 +50,5 @@ wrong.
 ## Files
 
 - [`001-634e2a7c458b.ts`](./catalog/plans/pl_ci_speed/versions/001-634e2a7c458b.ts) — the hypothesis
-- [`002-e10822d3395b.ts`](./catalog/plans/pl_ci_speed/versions/002-e10822d3395b.ts) — it dies
-- [`003-549d0e4af2eb.ts`](./catalog/plans/pl_ci_speed/versions/003-549d0e4af2eb.ts) — the cold-start follow-on
+- [`002-68fdda593f4d.ts`](./catalog/plans/pl_ci_speed/versions/002-68fdda593f4d.ts) — it dies
+- [`003-55ca61867911.ts`](./catalog/plans/pl_ci_speed/versions/003-55ca61867911.ts) — the cold-start follow-on

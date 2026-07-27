@@ -4,16 +4,18 @@
 //! Plan Versions carrying structural intent, and append-only Progress Events
 //! carrying execution. Head, Readiness and lineage are derived, never stored.
 //!
-//! Zero external crates, deliberately: it keeps the build offline-capable and
-//! avoids baking in a serialization format while DQ02 is open.
+//! A version is a TypeScript module (decision 0014); reading it is evaluating
+//! it in an embedded, capability-free JavaScript engine (see [`eval`]).
+//! rquickjs (QuickJS-ng) and oxc are the crate's only external dependencies,
+//! authorised by decision 0011.
 
 pub mod block;
 pub mod catalog;
 pub mod chain;
-pub mod change;
 pub mod cli;
 pub mod cmd;
 pub mod convergence;
+pub mod eval;
 pub mod event;
 pub mod json;
 pub mod model;

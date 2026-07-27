@@ -51,10 +51,14 @@
   plainly that replication is inactive, rather than being silent in a way that
   resembles a healthy sync. _refines: CMP-R05, CMP-R06._
 
-- **CMP.INT-R06 Source convergence from the substrate.** The
-  converged-or-arriving signal comes from the replication mechanism's own state.
-  It cannot be inferred from the catalog, which has no way to express
-  completeness. _refines: CMP-R05._
+- **CMP.INT-R06 Source the convergence signal from the substrate.** The
+  arriving-or-quiescent signal comes from the replication mechanism's own state,
+  not from the catalog, which has no way to express completeness. But the
+  substrate cannot express completeness either — for the same reason the catalog
+  cannot: nothing knows how many versions a Plan *should* have. So the strongest
+  honest signal is "the sync is quiescent as of now," never "you have
+  everything." Compass must report quiescent, receiving, or unknown, and must
+  not claim completeness a substrate cannot provide. _refines: CMP-R05._
 
 - **CMP.INT-R07 Verify the policy, not just the presence.** Compass confirms the
   declared replication carries no-delete semantics. A mechanism that propagates

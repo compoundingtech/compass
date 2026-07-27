@@ -109,7 +109,7 @@ pub fn analyze(store: &PlanStore) -> Analysis<'_> {
     // A version is a successor of each hash it names as parent.
     let mut has_successor: HashSet<&str> = HashSet::new();
     for a in &store.versions {
-        for p in &a.version.parents {
+        for p in &a.parents {
             has_successor.insert(p.as_str());
         }
     }
@@ -125,7 +125,6 @@ pub fn analyze(store: &PlanStore) -> Analysis<'_> {
         .iter()
         .filter_map(|a| {
             let missing: Vec<String> = a
-                .version
                 .parents
                 .iter()
                 .filter(|p| !present.contains(p.as_str()))
@@ -144,10 +143,10 @@ pub fn analyze(store: &PlanStore) -> Analysis<'_> {
     let mut by_parent: BTreeMap<&str, Vec<&Admitted>> = BTreeMap::new();
     let mut roots: Vec<&Admitted> = Vec::new();
     for a in &store.versions {
-        if a.version.parents.is_empty() {
+        if a.parents.is_empty() {
             roots.push(a);
         }
-        for p in &a.version.parents {
+        for p in &a.parents {
             if present.contains(p.as_str()) {
                 by_parent.entry(p.as_str()).or_default().push(a);
             }
@@ -157,7 +156,7 @@ pub fn analyze(store: &PlanStore) -> Analysis<'_> {
     // Forward edges, to decide whether a divergence has been reconciled.
     let mut children_of: BTreeMap<&str, Vec<&Admitted>> = BTreeMap::new();
     for a in &store.versions {
-        for p in &a.version.parents {
+        for p in &a.parents {
             children_of.entry(p.as_str()).or_default().push(a);
         }
     }
@@ -266,47 +265,35 @@ pub fn lineage<'a>(store: &'a PlanStore, hash: &str) -> Vec<&'a Admitted> {
         }
         let Some(a) = store.version(&h) else { continue };
         out.push(a);
-        for p in &a.version.parents {
+        for p in &a.parents {
             queue.push(p.clone());
         }
     }
 
-    out.sort_by(|a, b| (a.version.seq, &a.hash).cmp(&(b.version.seq, &b.hash)));
+    out.sort_by(|a, b| (a.seq, &a.hash).cmp(&(b.seq, &b.hash)));
     out
 }
 
 /// The `seq` a new version should carry: one past the longest predecessor.
 pub fn next_seq(parents: &[&Admitted]) -> u64 {
-    parents.iter().map(|p| p.version.seq).max().unwrap_or(0) + 1
+    parents.iter().map(|p| p.seq).max().unwrap_or(0) + 1
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::catalog::Admitted;
-    use crate::model::{Step, Version};
-    use crate::predicate::parse as pred;
     use std::path::PathBuf;
 
-    fn v(plan: &str, seq: u64, why: &str, parents: Vec<String>) -> Admitted {
-        let version = Version {
+    /// A stand-in admitted version. `tag` seeds a unique content hash, standing
+    /// for a version's authored source (chain logic never evaluates).
+    fn v(plan: &str, seq: u64, tag: &str, parents: Vec<String>) -> Admitted {
+        Admitted {
+            hash: crate::sha256::sha256_hex(format!("{plan}:{seq}:{tag}").as_bytes()),
+            path: PathBuf::from("/dev/null"),
             plan: plan.into(),
             seq,
             parents,
-            author: "cos".into(),
-            why: why.into(),
-            goal: "Goal".into(),
-            retired: false,
-            steps: vec![Step::new(
-                "st_A000000001",
-                "Work",
-                pred("test(status=pass)").unwrap(),
-            )],
-        };
-        Admitted {
-            hash: version.hash(),
-            path: PathBuf::from("/dev/null"),
-            version,
         }
     }
 
@@ -500,8 +487,8 @@ mod tests {
 
         let chain = lineage(&s, &tip);
         assert_eq!(chain.len(), 3);
-        let whys: Vec<&str> = chain.iter().map(|a| a.version.why.as_str()).collect();
-        assert_eq!(whys, vec!["first", "second", "third"]);
+        let seqs: Vec<u64> = chain.iter().map(|a| a.seq).collect();
+        assert_eq!(seqs, vec![1, 2, 3], "oldest first");
     }
 
     #[test]
@@ -518,10 +505,21 @@ mod tests {
         let tip = merge.hash.clone();
         let s = store(vec![a, left, right, merge]);
 
+        let merge_hash = tip.clone();
+        let root_hash = a_hash(&s);
         let chain = lineage(&s, &tip);
         assert_eq!(chain.len(), 4, "the shared root appears once, not twice");
-        assert_eq!(chain[0].version.why, "first");
-        assert_eq!(chain[3].version.why, "both");
+        assert_eq!(chain[0].hash, root_hash, "the root is oldest");
+        assert_eq!(chain[3].hash, merge_hash, "the reconciliation is newest");
+    }
+
+    /// The single seq-1 root's hash, for lineage-order assertions.
+    fn a_hash(s: &PlanStore) -> String {
+        s.versions
+            .iter()
+            .find(|a| a.seq == 1)
+            .map(|a| a.hash.clone())
+            .unwrap()
     }
 
     #[test]

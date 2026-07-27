@@ -1,47 +1,41 @@
-//! Plan Versions and Steps — the documents Compass owns (CMP.INT-R02).
+//! The domain model of a Plan Version, recovered by evaluation.
 //!
-//! A Plan Version is immutable (CMP-R02), carries a required Rationale
-//! (CMP-R03), records its author, and names each predecessor by content hash.
-//! Its identity *is* the hash of its rendered bytes, so rendering must be
-//! canonical: same intent, same bytes, same hash, on every machine.
-//!
-//! Identity is derived and no field is excluded from it (decision 0007), so a
-//! name always determines the content. Nothing here records a clock or a
-//! counter of what the author had seen: order is read from the lineage and
-//! attribution is the `author` field alone (CMP.DM-R07).
+//! A version is a module (decision 0014): its identity is the SHA-256 of its
+//! authored source bytes, and reading it means evaluating it (see [`crate::eval`]).
+//! This module holds the *evaluated* shape — goal, rationale, author, and the
+//! Steps with their declared identities — plus the structural checks a commit
+//! must pass. Nothing here parses or renders a stored form: there is no stored
+//! form but the authored source.
 
-use crate::block::{parse as parse_block, Block, Doc, ParseError};
+use crate::eval::{SemStep, SemVersion};
 use crate::predicate::Pred;
-use crate::sha256::sha256_hex;
 
-/// File extension for both versions and events (DQ02 — provisional).
-pub const EXT: &str = "cmp";
-
-/// Number of hex characters of the content hash embedded in a filename.
-///
-/// The full hash is the identity; this prefix only makes the file findable and
-/// human-referable. Admission always checks the full content, never the prefix
-/// alone.
+/// File extension for a version module.
+pub const VERSION_EXT: &str = "ts";
+/// File extension for a progress event.
+pub const EVENT_EXT: &str = "cmp";
+/// Hex characters of the content hash embedded in a filename. The full hash is
+/// the identity; this prefix only makes a file findable and referable.
 pub const HASH_PREFIX_LEN: usize = 12;
 
 /// A unit of intended work within a Plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
-    /// Minted StepRef — never derived from content (decision 0004).
+    /// StepRef — the name the step was declared under (decision 0012).
     pub id: String,
     pub work: String,
-    /// Sorted StepRefs this step depends on.
+    /// StepRefs this step depends on, sorted.
     pub depends_on: Vec<String>,
     /// The StepRef this step replaces, when intended work changed identity.
     pub supersedes: Option<String>,
-    /// Machine-checkable acceptance (CMP-R11). Required: a step whose
-    /// acceptance cannot be evaluated could never complete, and would block
-    /// every dependent forever.
+    /// Machine-checkable acceptance (decision 0006).
     pub accept: Pred,
     pub retired: bool,
 }
 
 impl Step {
+    /// A step with no dependencies, superseding nothing — mostly for tests and
+    /// for building a starter version.
     pub fn new(id: impl Into<String>, work: impl Into<String>, accept: Pred) -> Step {
         Step {
             id: id.into(),
@@ -52,17 +46,31 @@ impl Step {
             retired: false,
         }
     }
+
+    fn from_sem(s: &SemStep) -> Step {
+        Step {
+            id: s.name.clone(),
+            work: s.work.clone(),
+            depends_on: s.depends_on.clone(),
+            supersedes: s.supersedes.clone(),
+            accept: s.accept.clone(),
+            retired: s.retired,
+        }
+    }
 }
 
-/// An immutable, content-addressed snapshot of a Plan's structural intent.
+/// An immutable snapshot of a Plan's structural intent, as evaluated.
+///
+/// `plan`, `seq`, and `parents` are supplied by the catalog (the plan is the
+/// directory, the parents are the imported predecessor files, the seq is a
+/// reading aid). Everything else is declared by the module and recovered by
+/// evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
     pub plan: String,
-    /// Position along this version's lineage. A reading aid, never a key:
-    /// divergent versions may share a `seq` and nothing resolves on it.
+    /// Position along this version's lineage. A reading aid, never a key.
     pub seq: u64,
-    /// Content hash of each predecessor, sorted. Empty for the first version,
-    /// one ordinarily, several for a Reconciliation.
+    /// Content hashes of each predecessor (resolved), sorted.
     pub parents: Vec<String>,
     pub author: String,
     /// Required Rationale (CMP-R03).
@@ -73,162 +81,72 @@ pub struct Version {
 }
 
 impl Version {
-    /// Render canonically. These bytes are what gets hashed and written.
-    ///
-    /// Field order is fixed and follows the spec's field table. Set-valued
-    /// keys (`parent`, `depends_on`) are sorted, because they carry no order.
-    /// Step order is *preserved* as authored: a plan is read top to bottom and
-    /// reordering steps is a change to the document, not noise to normalise.
-    pub fn render(&self) -> String {
-        let mut doc = Doc::new();
-
-        let mut v = Block::new("version", None);
-        v.set("plan", &self.plan);
-        v.set("seq", self.seq.to_string());
-        let mut parents = self.parents.clone();
+    /// Assemble a domain version from an evaluated module plus the catalog-side
+    /// facts (which plan, which lineage position, which predecessors).
+    pub fn from_sem(plan: &str, seq: u64, parents: Vec<String>, sem: &SemVersion) -> Version {
+        let mut parents = parents;
         parents.sort();
-        v.set_many("parent", parents);
-        v.set("author", &self.author);
-        v.set("why", &self.why);
-        v.set("goal", &self.goal);
-        if self.retired {
-            v.set("retired", "true");
-        }
-        doc.push(v);
-
-        for step in &self.steps {
-            let mut s = Block::new("step", Some(step.id.clone()));
-            s.set("work", &step.work);
-            let mut deps = step.depends_on.clone();
-            deps.sort();
-            s.set_many("depends_on", deps);
-            s.set_opt("supersedes", step.supersedes.clone());
-            s.set("accept", step.accept.to_string());
-            if step.retired {
-                s.set("retired", "true");
-            }
-            doc.push(s);
-        }
-
-        doc.render()
-    }
-
-    /// The content hash: the identity of this version.
-    pub fn hash(&self) -> String {
-        sha256_hex(self.render().as_bytes())
-    }
-
-    /// Parse a version from its serialized bytes.
-    pub fn parse(text: &str) -> Result<Version, ParseError> {
-        let doc = parse_block(text)?;
-
-        let vb = doc
-            .first("version")
-            .ok_or_else(|| ParseError::new("no `@version` block"))?;
-
-        let plan = vb.require("plan")?.to_string();
-        let seq = parse_u64(vb.require("seq")?, "seq")?;
-        let author = vb.require("author")?.to_string();
-        let why = vb.require("why")?.to_string();
-        let goal = vb.require("goal")?.to_string();
-        let retired = parse_flag(vb.get("retired"), "version retired")?;
-
-        let mut parents: Vec<String> = vb
-            .all("parent")
-            .into_iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        parents.sort();
-        parents.dedup();
-
-        let mut steps = Vec::new();
-        for sb in doc.of_kind("step") {
-            let id = sb
-                .arg
-                .clone()
-                .ok_or_else(|| ParseError::new("`@step` block has no StepRef argument"))?;
-            let work = sb.require("work")?.to_string();
-            let accept_src = sb.require("accept")?;
-            let accept = crate::predicate::parse(accept_src)
-                .map_err(|e| ParseError::new(format!("step {id}: cannot parse `accept`: {e}")))?;
-            let mut depends_on: Vec<String> = sb
-                .all("depends_on")
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            depends_on.sort();
-            depends_on.dedup();
-            let supersedes = sb.get("supersedes").map(|s| s.to_string());
-            let retired = parse_flag(sb.get("retired"), "step retired")?;
-
-            steps.push(Step {
-                id,
-                work,
-                depends_on,
-                supersedes,
-                accept,
-                retired,
-            });
-        }
-
-        let version = Version {
-            plan,
+        Version {
+            plan: plan.to_string(),
             seq,
             parents,
-            author,
-            why,
-            goal,
-            retired,
-            steps,
-        };
-        version.validate()?;
-        Ok(version)
+            author: sem.author.clone(),
+            why: sem.why.clone(),
+            goal: sem.goal.clone(),
+            retired: sem.retired,
+            steps: sem.steps.iter().map(Step::from_sem).collect(),
+        }
     }
 
-    /// Structural checks that parsing alone does not cover.
-    fn validate(&self) -> Result<(), ParseError> {
+    /// Look up a step by ref.
+    pub fn step(&self, id: &str) -> Option<&Step> {
+        self.steps.iter().find(|s| s.id == id)
+    }
+
+    /// Whether this version would record no change of intent against `parent`.
+    /// A revision must alter a Step or the goal (CMP.DM-R07b); the rationale and
+    /// author are deliberately not compared.
+    pub fn changes_nothing_from(&self, parent: &Version) -> bool {
+        self.steps == parent.steps && self.goal == parent.goal && self.retired == parent.retired
+    }
+
+    /// Structural checks a committed version must pass: no duplicate step, every
+    /// dependency present, and no dependency cycle (which would make readiness
+    /// unexplainable). These run against an evaluated module at commit time.
+    pub fn validate(&self) -> Result<(), String> {
         let mut seen: Vec<&str> = Vec::new();
         for s in &self.steps {
             if seen.contains(&s.id.as_str()) {
-                return Err(ParseError::new(format!(
-                    "step {} appears more than once in one version",
-                    s.id
-                )));
+                return Err(format!("step {} appears more than once", s.id));
             }
             seen.push(&s.id);
         }
         for s in &self.steps {
             for d in &s.depends_on {
                 if d == &s.id {
-                    return Err(ParseError::new(format!("step {} depends on itself", s.id)));
+                    return Err(format!("step {} depends on itself", s.id));
                 }
                 if !seen.contains(&d.as_str()) {
-                    return Err(ParseError::new(format!(
+                    return Err(format!(
                         "step {} depends on {d}, which is not a step of this version",
                         s.id
-                    )));
+                    ));
                 }
             }
         }
-        self.reject_dependency_cycles()?;
-        Ok(())
+        self.reject_dependency_cycles()
     }
 
-    /// A cycle in `depends_on` makes every step in it permanently unready, and
-    /// readiness would explain each step by pointing at the next one forever.
-    /// That is a defined answer but a useless one, so a cyclic plan is refused
-    /// at the door rather than admitted and then reported as stuck.
-    fn reject_dependency_cycles(&self) -> Result<(), ParseError> {
-        // Iterative depth-first search with an explicit colour map.
+    /// A cycle in `depends_on` makes every step in it permanently unready, so a
+    /// cyclic plan is refused rather than admitted and then reported as stuck.
+    fn reject_dependency_cycles(&self) -> Result<(), String> {
         #[derive(Clone, Copy, PartialEq)]
         enum Mark {
             Unvisited,
             InProgress,
             Done,
         }
-        let mut marks: Vec<Mark> = vec![Mark::Unvisited; self.steps.len()];
+        let mut marks = vec![Mark::Unvisited; self.steps.len()];
         let index = |id: &str| self.steps.iter().position(|s| s.id == id);
 
         for start in 0..self.steps.len() {
@@ -244,11 +162,10 @@ impl Version {
                     if let Some(next) = index(dep) {
                         match marks[next] {
                             Mark::InProgress => {
-                                return Err(ParseError::new(format!(
-                                    "dependency cycle: step {} and {} depend on each other, \
-                                     directly or transitively",
+                                return Err(format!(
+                                    "dependency cycle: step {} and {} depend on each other",
                                     self.steps[next].id, self.steps[node].id
-                                )));
+                                ));
                             }
                             Mark::Unvisited => {
                                 marks[next] = Mark::InProgress;
@@ -264,43 +181,21 @@ impl Version {
         }
         Ok(())
     }
-
-    /// Look up a step by ref.
-    pub fn step(&self, id: &str) -> Option<&Step> {
-        self.steps.iter().find(|s| s.id == id)
-    }
-
-    /// Whether this version would record no change of intent against `parent`.
-    ///
-    /// A revision must alter a Step or the goal (CMP.DM-R07b). Retirement —
-    /// of the plan or of a step — is a change and is not caught here. The
-    /// Rationale and the author are deliberately *not* compared: a retry whose
-    /// rationale was reworded is precisely the duplicate this rule exists to
-    /// refuse, and no derived value can detect it, because the bodies then
-    /// genuinely differ.
-    pub fn changes_nothing_from(&self, parent: &Version) -> bool {
-        self.steps == parent.steps && self.goal == parent.goal && self.retired == parent.retired
-    }
-
-    /// The filename this version is stored under: `<seq>-<hash12>.<ext>`.
-    pub fn filename(&self) -> String {
-        filename_for(self.seq, &self.hash())
-    }
 }
 
-/// Build the storage filename for a version.
+/// Build the storage filename for a version: `<seq>-<hash12>.ts`.
 pub fn filename_for(seq: u64, hash: &str) -> String {
     format!(
         "{:03}-{}.{}",
         seq,
         &hash[..HASH_PREFIX_LEN.min(hash.len())],
-        EXT
+        VERSION_EXT
     )
 }
 
 /// Split a version filename into its sequence and hash prefix.
 pub fn parse_filename(name: &str) -> Option<(u64, String)> {
-    let stem = name.strip_suffix(&format!(".{EXT}"))?;
+    let stem = name.strip_suffix(&format!(".{VERSION_EXT}"))?;
     let (seq, hash) = stem.split_once('-')?;
     if hash.len() != HASH_PREFIX_LEN || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
@@ -308,336 +203,73 @@ pub fn parse_filename(name: &str) -> Option<(u64, String)> {
     Some((seq.parse().ok()?, hash.to_string()))
 }
 
-fn parse_u64(s: &str, field: &str) -> Result<u64, ParseError> {
-    s.trim().parse().map_err(|_| {
-        ParseError::new(format!(
-            "`{field}` must be a non-negative integer, got `{s}`"
-        ))
-    })
-}
-
-fn parse_flag(v: Option<&str>, what: &str) -> Result<bool, ParseError> {
-    match v.map(str::trim) {
-        None => Ok(false),
-        Some("true") => Ok(true),
-        Some("false") => Ok(false),
-        Some(other) => Err(ParseError::new(format!(
-            "`{what}` must be `true` or `false`, got `{other}`"
-        ))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval::SemStep;
     use crate::predicate::parse as pred;
 
-    fn sample() -> Version {
-        let mut a = Step::new(
-            "st_A000000001",
-            "Reproduce with a failing test",
-            pred("test(name=parser::nested_groups, status=fail)").unwrap(),
-        );
-        a.retired = false;
-        let mut b = Step::new(
-            "st_B000000002",
-            "Fix the tokenizer",
-            pred("test(name=parser::nested_groups, status=pass)").unwrap(),
-        );
-        b.depends_on = vec!["st_A000000001".into()];
-        Version {
-            plan: "pl_7000000000".into(),
-            seq: 1,
-            parents: vec![],
-            author: "cos".into(),
-            why: "Initial plan. Parser rejects nested groups.".into(),
-            goal: "Nested groups parse correctly".into(),
+    fn sem_step(name: &str, deps: &[&str]) -> SemStep {
+        SemStep {
+            name: name.into(),
+            work: format!("work for {name}"),
+            depends_on: deps.iter().map(|d| d.to_string()).collect(),
+            supersedes: None,
+            accept: pred("test(status=pass)").unwrap(),
             retired: false,
-            steps: vec![a, b],
         }
     }
 
-    #[test]
-    fn round_trips_through_render_and_parse() {
-        let v = sample();
-        let parsed = Version::parse(&v.render()).unwrap();
-        assert_eq!(parsed, v);
-        assert_eq!(parsed.render(), v.render());
-        assert_eq!(parsed.hash(), v.hash());
+    fn version(steps: Vec<SemStep>) -> Version {
+        let sem = SemVersion {
+            author: "cos".into(),
+            why: "because".into(),
+            goal: "Ship".into(),
+            retired: false,
+            steps,
+        };
+        Version::from_sem("pl_x", 1, vec![], &sem)
     }
 
     #[test]
-    fn round_trips_a_reconciliation_with_several_parents() {
-        let mut v = sample();
-        v.parents = vec!["c3d4".repeat(16), "a1b2".repeat(16)];
-        v.seq = 4;
-        let parsed = Version::parse(&v.render()).unwrap();
-        // Parents come back sorted, so identity does not depend on the order
-        // the operator happened to name them.
-        assert_eq!(parsed.parents, {
-            let mut p = v.parents.clone();
-            p.sort();
-            p
-        });
-        assert_eq!(parsed.hash(), v.hash());
+    fn a_diamond_is_valid_but_a_cycle_is_not() {
+        let ok = version(vec![
+            sem_step("a", &[]),
+            sem_step("b", &["a"]),
+            sem_step("c", &["a"]),
+            sem_step("d", &["b", "c"]),
+        ]);
+        assert!(ok.validate().is_ok());
+
+        let cyclic = version(vec![sem_step("a", &["b"]), sem_step("b", &["a"])]);
+        assert!(cyclic.validate().unwrap_err().contains("cycle"));
     }
 
     #[test]
-    fn round_trips_a_multiline_rationale() {
-        let mut v = sample();
-        v.why =
-            "Reproduction showed the tokenizer,\nnot the grammar, drops it.\n\nRetargeting.".into();
-        let parsed = Version::parse(&v.render()).unwrap();
-        assert_eq!(parsed.why, v.why);
-        assert_eq!(parsed.hash(), v.hash());
+    fn a_dependency_on_an_unknown_step_is_refused() {
+        let v = version(vec![sem_step("a", &["ghost"])]);
+        assert!(v.validate().unwrap_err().contains("not a step"));
     }
 
     #[test]
-    fn round_trips_retirement_flags() {
-        let mut v = sample();
-        v.retired = true;
-        v.steps[0].retired = true;
-        v.steps[1].supersedes = Some("st_A000000001".into());
-        let parsed = Version::parse(&v.render()).unwrap();
-        assert_eq!(parsed, v);
+    fn changes_nothing_ignores_rationale_and_author() {
+        let a = version(vec![sem_step("a", &[])]);
+        let mut b = a.clone();
+        b.why = "reworded".into();
+        b.author = "someone".into();
+        assert!(b.changes_nothing_from(&a));
+
+        let mut c = a.clone();
+        c.goal = "New goal".into();
+        assert!(!c.changes_nothing_from(&a));
     }
 
     #[test]
-    fn hash_is_stable_across_equal_intent() {
-        assert_eq!(sample().hash(), sample().hash());
-    }
-
-    #[test]
-    fn hash_changes_when_any_field_changes() {
-        let base = sample().hash();
-        let mut v = sample();
-        v.why = "Different reason.".into();
-        assert_ne!(v.hash(), base);
-
-        let mut v = sample();
-        v.author = "someone-else".into();
-        assert_ne!(v.hash(), base);
-
-        let mut v = sample();
-        v.steps[0].work = "Reworded".into();
-        assert_ne!(v.hash(), base);
-    }
-
-    /// Decision 0007: no field is excluded from identity, so a name always
-    /// determines the content. The rendered body carries exactly the fields
-    /// the struct carries — in particular there is no `at` to reintroduce.
-    #[test]
-    fn identity_covers_the_whole_body() {
-        let text = sample().render();
-        assert!(
-            !text.lines().any(|l| l.trim_start().starts_with("at =")),
-            "a version records no clock or counter:\n{text}"
-        );
-    }
-
-    /// Two authors making the same revision from the same parent write the
-    /// same bytes, so they converge on one version rather than diverging.
-    /// Identical intent is identical.
-    #[test]
-    fn equal_intent_from_equal_parents_hashes_equally() {
-        let mut a = sample();
-        a.parents = vec!["ab".repeat(32)];
-        a.seq = 2;
-        let b = a.clone();
-        assert_eq!(a.hash(), b.hash());
-    }
-
-    #[test]
-    fn a_revision_altering_neither_step_nor_goal_changes_nothing() {
-        let parent = sample();
-        let mut same = parent.clone();
-        same.why = "Reworded rationale, identical intent.".into();
-        same.author = "another-agent".into();
-        same.seq = parent.seq + 1;
-        same.parents = vec![parent.hash()];
-        assert!(same.changes_nothing_from(&parent));
-    }
-
-    #[test]
-    fn altering_a_step_a_goal_or_retirement_is_a_change() {
-        let parent = sample();
-
-        let mut edited = parent.clone();
-        edited.steps[0].work = "Reproduce with two failing tests".into();
-        assert!(!edited.changes_nothing_from(&parent));
-
-        let mut regoaled = parent.clone();
-        regoaled.goal = "Nested groups parse, and so do quantifiers".into();
-        assert!(!regoaled.changes_nothing_from(&parent));
-
-        let mut retired_plan = parent.clone();
-        retired_plan.retired = true;
-        assert!(!retired_plan.changes_nothing_from(&parent));
-
-        let mut retired_step = parent.clone();
-        retired_step.steps[0].retired = true;
-        assert!(!retired_step.changes_nothing_from(&parent));
-
-        let mut added = parent.clone();
-        added.steps.push(Step::new(
-            "st_C000000003",
-            "Third",
-            pred("test(status=pass)").unwrap(),
-        ));
-        assert!(!added.changes_nothing_from(&parent));
-    }
-
-    #[test]
-    fn parent_order_does_not_affect_identity() {
-        let mut a = sample();
-        a.parents = vec!["aa".repeat(32), "bb".repeat(32)];
-        let mut b = sample();
-        b.parents = vec!["bb".repeat(32), "aa".repeat(32)];
-        assert_eq!(a.hash(), b.hash());
-    }
-
-    #[test]
-    fn attribute_order_in_accept_does_not_affect_identity() {
-        let mut a = sample();
-        a.steps[0].accept = pred("test(status=fail, name=parser::nested_groups)").unwrap();
-        assert_eq!(a.hash(), sample().hash());
-    }
-
-    #[test]
-    fn requires_a_rationale() {
-        let v = sample();
-        let text = v
-            .render()
-            .replace("why = Initial plan. Parser rejects nested groups.\n", "");
-        let err = Version::parse(&text).unwrap_err();
-        assert!(err.message.contains("why"), "{err}");
-    }
-
-    #[test]
-    fn requires_each_mandatory_field() {
-        for field in ["plan", "seq", "author", "goal"] {
-            let v = sample();
-            let text: String = v
-                .render()
-                .lines()
-                .filter(|l| !l.starts_with(&format!("{field} = ")))
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert!(
-                Version::parse(&text).is_err(),
-                "missing `{field}` should be rejected"
-            );
-        }
-    }
-
-    #[test]
-    fn rejects_a_step_without_machine_checkable_acceptance() {
-        let v = sample();
-        let text: String = v
-            .render()
-            .lines()
-            .filter(|l| !l.starts_with("accept = "))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(Version::parse(&text).is_err());
-    }
-
-    #[test]
-    fn rejects_a_dependency_on_an_unknown_step() {
-        let mut v = sample();
-        v.steps[1].depends_on = vec!["st_Z000000000".into()];
-        let err = Version::parse(&v.render()).unwrap_err();
-        assert!(err.message.contains("not a step"), "{err}");
-    }
-
-    #[test]
-    fn rejects_a_self_dependency() {
-        let mut v = sample();
-        v.steps[1].depends_on = vec!["st_B000000002".into()];
-        assert!(Version::parse(&v.render()).is_err());
-    }
-
-    #[test]
-    fn rejects_a_direct_dependency_cycle() {
-        let mut v = sample();
-        v.steps[0].depends_on = vec!["st_B000000002".into()];
-        v.steps[1].depends_on = vec!["st_A000000001".into()];
-        let err = Version::parse(&v.render()).unwrap_err();
-        assert!(err.message.contains("cycle"), "{err}");
-    }
-
-    #[test]
-    fn rejects_a_transitive_dependency_cycle() {
-        let mut v = sample();
-        v.steps.push(Step::new(
-            "st_C000000003",
-            "Third",
-            pred("test(status=pass)").unwrap(),
-        ));
-        // A -> C -> B -> A
-        v.steps[0].depends_on = vec!["st_C000000003".into()];
-        v.steps[1].depends_on = vec!["st_A000000001".into()];
-        v.steps[2].depends_on = vec!["st_B000000002".into()];
-        assert!(Version::parse(&v.render()).is_err());
-    }
-
-    #[test]
-    fn accepts_a_diamond_which_is_not_a_cycle() {
-        let mut v = sample();
-        v.steps.push(Step::new(
-            "st_C000000003",
-            "Third",
-            pred("test(status=pass)").unwrap(),
-        ));
-        v.steps.push(Step::new(
-            "st_D000000004",
-            "Fourth",
-            pred("test(status=pass)").unwrap(),
-        ));
-        // B and C both depend on A; D depends on both B and C.
-        v.steps[1].depends_on = vec!["st_A000000001".into()];
-        v.steps[2].depends_on = vec!["st_A000000001".into()];
-        v.steps[3].depends_on = vec!["st_B000000002".into(), "st_C000000003".into()];
-        assert!(Version::parse(&v.render()).is_ok());
-    }
-
-    #[test]
-    fn rejects_duplicate_steps() {
-        let mut v = sample();
-        v.steps[1].id = v.steps[0].id.clone();
-        assert!(Version::parse(&v.render()).is_err());
-    }
-
-    #[test]
-    fn rejects_a_non_boolean_retired_flag() {
-        let v = sample();
-        let text = v.render().replace("goal = ", "retired = yes\ngoal = ");
-        assert!(Version::parse(&text).is_err());
-    }
-
-    #[test]
-    fn filenames_embed_seq_and_hash_prefix() {
-        let v = sample();
-        let name = v.filename();
-        let (seq, prefix) = parse_filename(&name).unwrap();
-        assert_eq!(seq, 1);
-        assert_eq!(prefix, v.hash()[..HASH_PREFIX_LEN]);
-        assert!(name.ends_with(".cmp"));
-        assert!(name.starts_with("001-"));
-    }
-
-    #[test]
-    fn filename_parsing_rejects_foreign_names() {
+    fn filenames_round_trip() {
+        let name = filename_for(2, &"a".repeat(64));
+        assert_eq!(name, format!("002-{}.ts", "a".repeat(12)));
+        assert_eq!(parse_filename(&name), Some((2, "a".repeat(12))));
         assert!(parse_filename("README.md").is_none());
-        assert!(parse_filename("001-nothex000000.cmp").is_none());
-        assert!(parse_filename("001-abc.cmp").is_none(), "short hash");
-        assert!(parse_filename("noseparator.cmp").is_none());
-    }
-
-    #[test]
-    fn a_version_with_no_steps_is_valid() {
-        let mut v = sample();
-        v.steps.clear();
-        assert_eq!(Version::parse(&v.render()).unwrap(), v);
+        assert!(parse_filename("001-short.ts").is_none());
     }
 }
