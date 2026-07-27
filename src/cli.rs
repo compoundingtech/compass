@@ -21,7 +21,7 @@ pub enum Command {
     Start {
         goal: Option<String>,
     },
-    /// Evaluate a module and store it under its derived PlanRef (decision 0017).
+    /// Evaluate a module and store it under its derived PlanId (decision 0017).
     Commit {
         path: PathBuf,
     },
@@ -321,7 +321,7 @@ pub fn help(topic: Option<&str>) -> String {
         Some("commit") => "\
 compass commit <module.ts>
 
-  Evaluate a module and store it under its derived PlanRef (decision 0017).
+  Evaluate a module and store it under its derived PlanId (decision 0017).
   A version is the authored module, stored unchanged (decision 0014); a Plan's
   identity is the content hash of its origin, derived here — you name nothing.
 
@@ -372,7 +372,7 @@ usage: compass <command> [options]
   evidence <plan> <step> <kind> k=v    record evidence acceptance evaluates
   version                              build identity
 
-A <plan> is addressed by its PlanRef (the origin's hash) or, when unambiguous,
+A <plan> is addressed by its PlanId (the origin's hash) or, when unambiguous,
 by its goal. A Plan is never named: its identity is derived (decision 0017).
 
 global options:

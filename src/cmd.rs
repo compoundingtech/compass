@@ -106,8 +106,8 @@ fn load(root: &Path, plan: &str) -> Result<PlanStore, String> {
     catalog::load_plan(root, plan)
 }
 
-/// Resolve a Plan address to its PlanRef directory (decision 0017). A Plan is
-/// addressed by its PlanRef — the origin's hash, which is the directory name — so
+/// Resolve a Plan address to its PlanId directory (decision 0017). A Plan is
+/// addressed by its PlanId — the origin's hash, which is the directory name — so
 /// that always works. As a convenience it also resolves an unambiguous hash
 /// prefix, and, failing that, an exact `goal` match when it is unique. Exactness
 /// is the hash; goal-resolution is a nicety and never guesses.
@@ -115,12 +115,12 @@ fn resolve_plan(root: &Path, addr: &str) -> String {
     if !catalog::exists(root) {
         return addr.to_string();
     }
-    // Exact PlanRef: a directory by that name.
+    // Exact PlanId: a directory by that name.
     if catalog::plan_dir(root, addr).is_dir() {
         return addr.to_string();
     }
     let plans = catalog::list_plans(root).unwrap_or_default();
-    // A unique hash-prefix of a PlanRef.
+    // A unique hash-prefix of a PlanId.
     let prefix_hits: Vec<&String> = plans.iter().filter(|p| p.starts_with(addr)).collect();
     if prefix_hits.len() == 1 {
         return prefix_hits[0].clone();
@@ -222,7 +222,7 @@ fn cmd_version() -> Output {
 
 fn cmd_start(root: &Path, goal: Option<&str>, author: &str) -> Result<Output, String> {
     catalog::init(root)?;
-    // A draft has no PlanRef yet — identity is derived from the origin at commit
+    // A draft has no PlanId yet — identity is derived from the origin at commit
     // (decision 0017) — so it is scaffolded into a staging area, not a plan dir.
     let dir = catalog::drafts_dir(root);
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -295,9 +295,9 @@ fn cmd_commit(root: &Path, path: &Path) -> Result<Output, String> {
         .map_err(|e| format!("{}: not valid UTF-8: {e}", path.display()))?;
 
     // A Plan's identity is derived from its origin (decision 0017): the operator
-    // names nothing. An origin is its own PlanRef; a revision inherits its Plan
+    // names nothing. An origin is its own PlanId; a revision inherits its Plan
     // from the predecessor it descends from.
-    let plan = catalog::derive_planref(path, &source)?;
+    let plan = catalog::derive_planid(path, &source)?;
 
     // Evaluate the authored module (imports resolve at its location).
     let map = crate::eval::eval_plan_file(path).map_err(|e| {
@@ -608,7 +608,7 @@ fn cmd_history(root: &Path, plan: &str) -> Result<Output, String> {
     let mut entries: Vec<Json> = Vec::new();
 
     // The goal is the Plan's human handle (CMP.DM-R18): lead with it, addressed
-    // by the PlanRef and the first head's goal.
+    // by the PlanId and the first head's goal.
     let goal = an
         .head
         .iter()

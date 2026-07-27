@@ -40,7 +40,7 @@ it.
 [decision 0017](./.decisions/0017-a-plans-identity-is-its-origin.md). A Plan's
 identity is the content hash of its origin (predecessor-less) version — derived,
 never declared or minted, encoding no location. Two versions are the same Plan
-when they share an origin, and the origin's own identity is the PlanRef. Human
+when they share an origin, and the origin's own identity is the PlanId. Human
 readability is carried by the required `goal`, not by the identity, so the
 identity need not be readable and is fully derived.
 

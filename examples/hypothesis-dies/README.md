@@ -49,7 +49,7 @@ wrong.
 
 ## Files
 
-This plan has no name. Its identity — its PlanRef — is the content hash of its
+This plan has no name. Its identity — its PlanId — is the content hash of its
 origin, the first version (decision 0017), so the plan directory is
 `634e2a7c458b`, the same hash the `001` file carries. To a person it is its goal,
 "CI builds finish under 10 minutes"; the hash is only for exactness.

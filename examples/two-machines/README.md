@@ -56,7 +56,7 @@ added.
 
 ## Files
 
-This plan has no name. Its identity — its PlanRef — is the content hash of its
+This plan has no name. Its identity — its PlanId — is the content hash of its
 origin, the shared base `001` (decision 0017), so the plan directory is
 `8e528ff9bc56`, the same hash the `001` file carries. Both `002` sides descend
 from that origin, so they are the same Plan. To a person it is its goal, "Nested

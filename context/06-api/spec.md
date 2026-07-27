@@ -127,7 +127,7 @@ an open question (DQ08).
 Referring to another Plan's version is importing it. The import path reaches
 across the catalog's plan-then-versions layout, so a sibling plan is two levels
 up — pop `versions/`, then the plan segment. That segment is the other Plan's
-PlanRef, its origin hash (decision 0017), not a chosen name:
+PlanId, its origin hash (decision 0017), not a chosen name:
 
 ```ts
 import release from "../../4d81f0a2b3c1/versions/007-4d81f0a2b3c1.ts"

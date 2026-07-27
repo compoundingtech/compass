@@ -58,7 +58,7 @@ pub struct StepReadiness {
     pub state: StepState,
     /// Why the step is in this state. Never empty.
     pub reason: String,
-    /// StepRefs whose acceptance is holding this step back.
+    /// Steps whose acceptance is holding this step back.
     pub blocked_by: Vec<String>,
     /// The acceptance criterion, canonically rendered.
     pub accept: String,

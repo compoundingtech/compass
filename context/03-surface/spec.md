@@ -5,8 +5,8 @@ Realizes [requirements.md](./requirements.md).
 ## Shape
 
 ```text
-read(PlanRef)    -> PlanView | NotFound | Unresolved | Stopped
-ready(PlanRef)   -> Readiness | NotFound | Unresolved | Stopped
+read(PlanId)    -> PlanView | NotFound | Unresolved | Stopped
+ready(PlanId)   -> Readiness | NotFound | Unresolved | Stopped
 mutate(Mutation) -> Receipt | Rejected
 ```
 

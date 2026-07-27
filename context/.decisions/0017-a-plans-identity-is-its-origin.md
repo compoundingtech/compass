@@ -12,7 +12,7 @@ A Step's identity is the name it is declared under (0012). A Plan has no such
 declaration site — it is not an export in another module — so that mechanism does
 not transfer. Minting is gone. In its absence the implementation fell back on the
 catalog directory as the Plan's handle, which makes identity a filesystem
-location: exactly what the ontology's PlanRef definition forbids, and it means moving or
+location: exactly what the ontology's PlanId definition forbids, and it means moving or
 misfiling a version silently changes which Plan it belongs to.
 
 Three candidates were on the table: a declared name, a path segment, and the
@@ -36,15 +36,15 @@ one value with two jobs and reintroduce an assertion that can be typed wrong,
 for a readability that `goal` already provides.
 
 So identity is the hash of the **origin** — the single predecessor-less version.
-It is fully derived (CMP-R10), encodes no location (its PlanRef ontology entry), cannot collide,
+It is fully derived (CMP-R10), encodes no location (its PlanId ontology entry), cannot collide,
 and makes "the same Plan" a content fact: two versions belong to the same Plan
 iff they descend from the same origin. There is a clean invariant in it — the
-origin version's own identity *is* the PlanRef, since both are the hash of the
+origin version's own identity *is* the PlanId, since both are the hash of the
 same bytes.
 
 The one objection DQ04 itself raised — a hash is unavailable before the first
 version exists, which seems to collide with CMP-R11 (starting must be trivial) —
-does not hold. Authoring a Plan references nothing by PlanRef: a first version
+does not hold. Authoring a Plan references nothing by PlanId: a first version
 declares steps and a goal, imports only `compass`, and names no plan identity.
 The ref comes into being when the origin is committed, which is exactly when a
 Plan first exists. Starting stays a single command; the author never types or
@@ -56,15 +56,15 @@ needs a ref.
 | --- | --- |
 | Origin content hash | Fully derived, collision-free, location-independent, "same Plan" is a content fact; opaque, and unavailable until the origin is committed |
 | Name declared in `plan()` | Readable and idempotent; asserts an identity that `goal` already makes readable, and can be typed wrong |
-| Catalog path segment | Simplest and matches a naive implementation; makes identity a location, which the PlanRef ontology entry forbids, so a moved file changes identity |
+| Catalog path segment | Simplest and matches a naive implementation; makes identity a location, which the PlanId ontology entry forbids, so a moved file changes identity |
 
 ## Decision
 
-A Plan's identity, its PlanRef, is the content hash of its origin version — the
+A Plan's identity, its PlanId, is the content hash of its origin version — the
 version with no predecessor. It is derived, never declared and never minted.
 
 Two versions are the same Plan when they share an origin. The catalog files a
-Plan under its PlanRef, and a version whose derived Plan does not match where it
+Plan under its PlanId, and a version whose derived Plan does not match where it
 is filed is rejected rather than reinterpreted, on the same terms as a version
 whose content does not match its own name.
 
@@ -75,13 +75,13 @@ other's job.
 
 ## Consequences
 
-- The PlanRef is not known until the origin is committed. This does not affect
-  starting or authoring, which reference no PlanRef; it affects only how a Plan
+- The PlanId is not known until the origin is committed. This does not affect
+  starting or authoring, which reference no PlanId; it affects only how a Plan
   is addressed afterwards, where `goal` is the readable handle and the hash is
   the exact one.
-- The origin version's identity and the PlanRef are the same hash. A Plan is,
+- The origin version's identity and the PlanId are the same hash. A Plan is,
   precisely, its first stated intent.
-- Cross-plan references resolve to a PlanRef and so are content-addressed; their
+- Cross-plan references resolve to a PlanId and so are content-addressed; their
   import paths are opaque, which is acceptable because they are machine-written.
 - Renaming is not an operation. A Plan cannot be renamed because it was never
   named; its `goal` can be revised like any other intent, and its identity is

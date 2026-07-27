@@ -8,7 +8,7 @@ _Avoid_: planner, task runner, issue tracker
 
 **Plan**:
 Durable authored intent for one goal: an acceptance contract plus a dependency
-graph of Steps. A Plan is referenced by a `PlanRef`. A Plan is never edited; it
+graph of Steps. A Plan is identified by a `PlanId`. A Plan is never edited; it
 is revised, which produces a new Plan Version.
 _Avoid_: ticket, issue, epic, backlog, board
 
@@ -97,26 +97,24 @@ _Avoid_: rebase, conflict resolution, merge commit, fixup
 
 **Step**:
 A stable unit of intended work within a Plan, carrying dependencies, acceptance
-criteria, and lifecycle. Referenced by a `StepRef`.
-_Avoid_: task row, checklist item, ephemeral list index
+criteria, and lifecycle. **Its identity is the name it is declared under**,
+qualified by its Plan: authored rather than minted, and independent of the
+Step's content, so it survives a rewording of the same intended work. The name
+is not opaque and not a separate handle — depending on a Step *names the
+declaration* (a language reference), so there is no identifier to invent or
+mistype. A name is never reused after the Step is retired, and a Step declared
+without a name has no identity and is refused.
+_Avoid_: task row, checklist item, ephemeral list index, StepRef, minted id, opaque token
 
-**StepRef**:
-A Step's identity: the name it is declared under, qualified by its Plan. It is
-authored rather than minted, and is independent of the Step's content, so it
-survives a rewording of the same intended work. It is not opaque — a reader can
-read it — and it is not invented at a use site, because a dependency names the
-declaration rather than spelling a reference. It is never reused after the Step
-is retired, and a Step declared without a name has no identity and is refused.
-_Avoid_: minted id, content hash, array index, title slug, opaque token
-
-**PlanRef**:
+**PlanId**:
 A Plan's identity: the content hash of its origin — the single predecessor-less
 version. It is derived, never declared and never minted, and encodes no
 filesystem, database, transport, or host location. Two versions are the same
-Plan when they share an origin; the origin version's own identity and the
-PlanRef are the same hash. It is machine-facing; the human handle for a Plan is
-its `goal`.
-_Avoid_: plan path, catalog path, file name, plan name, declared id
+Plan when they share an origin; the origin version's own identity and the PlanId
+are the same hash. It is machine-facing; the human handle for a Plan is its
+`goal`. It is an identity, not a pointer — a cross-Plan reference imports the
+other Plan's version rather than spelling this.
+_Avoid_: plan path, catalog path, file name, plan name, declared id, PlanRef, reference
 
 **Catalog**:
 The on-disk tree of Plans. Discovery is content-based: the tree is walked and
@@ -175,6 +173,6 @@ _Avoid_: log acknowledgement, observation id
 
 **Observation**:
 An operational fact emitted by a surrounding system after a Compass mutation
-succeeds. It may reference a Receipt, PlanRef, or StepRef, but never becomes
+succeeds. It may reference a Receipt, a PlanId, or a Step by its name, but never becomes
 Compass state.
 _Avoid_: progress authority, completion record

@@ -6,14 +6,14 @@ Realizes [requirements.md](./requirements.md). The logical model it stores is in
 ## Layout
 
 ```text
-catalog/plans/<planref>/versions/<seq>-<hash>.ts    immutable, mode 0444
-catalog/plans/<planref>/events/<ts>-<id>.<ext>      append-only
+catalog/plans/<planid>/versions/<seq>-<hash>.ts    immutable, mode 0444
+catalog/plans/<planid>/events/<ts>-<id>.<ext>      append-only
 ```
 
-`<planref>` is the Plan's identity: the content hash of its origin version
+`<planid>` is the Plan's identity: the content hash of its origin version
 (decision 0017). A Plan is filed under it; it is derived, not chosen, so no two
 Plans collide and no Plan is named. A version whose origin resolves to a
-different PlanRef than the directory it sits in is rejected, on the same terms as
+different PlanId than the directory it sits in is rejected, on the same terms as
 a version whose content does not match its own name — a misfiled version is never
 reinterpreted into the Plan it was filed under.
 

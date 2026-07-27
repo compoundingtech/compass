@@ -6,10 +6,10 @@ Realizes [requirements.md](./requirements.md). Storage is specified in
 ## Plan
 
 A Plan is a lineage of Versions plus the Progress recorded against them. It is
-named by a `PlanRef` — the content hash of its origin, the one version with no
+named by a `PlanId` — the content hash of its origin, the one version with no
 predecessor (decision 0017). Identity is derived from the origin, so two
 versions are the same Plan iff they share one; the origin's own identity is the
-PlanRef. The human handle for a Plan is its required `goal`, not the PlanRef.
+PlanId. The human handle for a Plan is its required `goal`, not the PlanId.
 
 ## Version
 

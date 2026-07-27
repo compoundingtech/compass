@@ -21,12 +21,12 @@ pub const HASH_PREFIX_LEN: usize = 12;
 /// A unit of intended work within a Plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
-    /// StepRef — the name the step was declared under (decision 0012).
+    /// Identity — the name the step was declared under (decision 0012).
     pub id: String,
     pub work: String,
-    /// StepRefs this step depends on, sorted.
+    /// Names of the steps this step depends on, sorted.
     pub depends_on: Vec<String>,
-    /// The StepRef this step replaces, when intended work changed identity.
+    /// The step this replaces, by name,, when intended work changed identity.
     pub supersedes: Option<String>,
     /// Machine-checkable acceptance (decision 0006).
     pub accept: Pred,

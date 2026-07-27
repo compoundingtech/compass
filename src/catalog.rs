@@ -1,8 +1,8 @@
 //! The Catalog: on-disk storage and deliberate admission.
 //!
 //! ```text
-//! <root>/plans/<planref>/versions/<seq>-<hash12>.ts    immutable, mode 0444
-//! <root>/plans/<planref>/events/<at>-<id>.cmp          append-only
+//! <root>/plans/<planid>/versions/<seq>-<hash12>.ts    immutable, mode 0444
+//! <root>/plans/<planid>/events/<at>-<id>.cmp          append-only
 //! ```
 //!
 //! ## Admission (02-artifacts)
@@ -132,7 +132,7 @@ pub fn events_dir(root: &Path, plan: &str) -> PathBuf {
 }
 /// Where `start` scaffolds a draft before its identity is known. It is a sibling
 /// of `plans/`, never under it, so `list_plans` never mistakes a draft for a Plan
-/// — a draft has no PlanRef until it is committed (decision 0017).
+/// — a draft has no PlanId until it is committed (decision 0017).
 pub fn drafts_dir(root: &Path) -> PathBuf {
     root.join("drafts")
 }
@@ -148,7 +148,7 @@ pub fn exists(root: &Path) -> bool {
     plans_dir(root).is_dir()
 }
 
-/// Every PlanRef with a directory in the catalog, sorted.
+/// Every PlanId with a directory in the catalog, sorted.
 pub fn list_plans(root: &Path) -> Result<Vec<String>, String> {
     let dir = plans_dir(root);
     if !dir.is_dir() {
@@ -331,7 +331,7 @@ fn predecessor_prefixes(
 /// Reject versions misfiled under the wrong Plan (decision 0017, CMP.DM-R17).
 ///
 /// A Plan's identity is the content hash of its origin. A version whose derived
-/// origin resolves to a PlanRef different from the directory it sits in is
+/// origin resolves to a PlanId different from the directory it sits in is
 /// rejected — never reinterpreted into the Plan it was filed under — on the same
 /// terms as a version whose content hash disagrees with its own filename.
 ///
@@ -348,7 +348,7 @@ fn reject_misfiled(store: &mut PlanStore, plan: &str) {
         .collect();
     let present: HashSet<String> = store.versions.iter().map(|a| a.hash.clone()).collect();
 
-    // The origin PlanRef of a version, or None when an ancestor is absent (an
+    // The origin PlanId of a version, or None when an ancestor is absent (an
     // orphan, whose Plan cannot be confirmed) or the lineage forms a cycle.
     let origin_prefix = |start: &str| -> Option<String> {
         let mut cur = start.to_string();
@@ -385,16 +385,16 @@ fn reject_misfiled(store: &mut PlanStore, plan: &str) {
     store.versions = kept;
 }
 
-/// Derive a version's PlanRef from its authored bytes (decision 0017).
+/// Derive a version's PlanId from its authored bytes (decision 0017).
 ///
 /// A Plan's identity is the content hash of its origin — the single
 /// predecessor-less version. An origin (a module that imports no predecessor) is
-/// its own PlanRef: the hash of its bytes, the same hash its version filename
+/// its own PlanId: the hash of its bytes, the same hash its version filename
 /// carries. A revision inherits its Plan from its predecessor: its origin is
 /// found by walking the predecessor imports back to the predecessor-less version,
 /// and hashing that. The operator names nothing; identity is derived, and the
 /// prefix width matches the version filenames' for consistency.
-pub fn derive_planref(path: &Path, source: &[u8]) -> Result<String, String> {
+pub fn derive_planid(path: &Path, source: &[u8]) -> Result<String, String> {
     let src = std::str::from_utf8(source)
         .map_err(|e| format!("{}: not valid UTF-8: {e}", path.display()))?;
     let origin_bytes = match sibling_predecessor_paths(path, src)?.into_iter().next() {
@@ -562,16 +562,16 @@ export const a = step({ work: "do a", accept: evidence.test({ status: "pass" }) 
 export default plan({ author: "cos", goal: "Ship", why: "start", steps: [a] })
 "#;
 
-    /// The PlanRef a module files under: the hash-prefix of its own bytes, for an
+    /// The PlanId a module files under: the hash-prefix of its own bytes, for an
     /// origin (decision 0017).
-    fn planref_of(source: &str) -> String {
+    fn planid_of(source: &str) -> String {
         crate::sha256::sha256_hex(source.as_bytes())[..crate::model::HASH_PREFIX_LEN].to_string()
     }
 
     #[test]
     fn admits_a_version_by_source_byte_hash() {
         let s = Scratch::new("admit");
-        let plan = planref_of(ROOT_MODULE);
+        let plan = planid_of(ROOT_MODULE);
         let (path, hash, created) =
             write_version(&s.root, &plan, 1, ROOT_MODULE.as_bytes()).unwrap();
         assert!(created);
@@ -587,7 +587,7 @@ export default plan({ author: "cos", goal: "Ship", why: "start", steps: [a] })
     #[test]
     fn identical_content_is_a_no_op() {
         let s = Scratch::new("noop");
-        let plan = planref_of(ROOT_MODULE);
+        let plan = planid_of(ROOT_MODULE);
         let (_, _, first) = write_version(&s.root, &plan, 1, ROOT_MODULE.as_bytes()).unwrap();
         let (_, _, second) = write_version(&s.root, &plan, 1, ROOT_MODULE.as_bytes()).unwrap();
         assert!(first);
@@ -597,7 +597,7 @@ export default plan({ author: "cos", goal: "Ship", why: "start", steps: [a] })
     #[test]
     fn tampered_bytes_are_rejected() {
         let s = Scratch::new("tamper");
-        let plan = planref_of(ROOT_MODULE);
+        let plan = planid_of(ROOT_MODULE);
         let (path, _, _) = write_version(&s.root, &plan, 1, ROOT_MODULE.as_bytes()).unwrap();
         make_writable_recursive(&s.root).unwrap();
         fs::write(&path, b"import x from 'y'\n").unwrap();
@@ -613,7 +613,7 @@ export default plan({ author: "cos", goal: "Ship", why: "start", steps: [a] })
     fn a_misfiled_version_is_rejected() {
         let s = Scratch::new("misfiled");
         let wrong = "999999999999";
-        assert_ne!(wrong, planref_of(ROOT_MODULE));
+        assert_ne!(wrong, planid_of(ROOT_MODULE));
         let (path, _, _) = write_version(&s.root, wrong, 1, ROOT_MODULE.as_bytes()).unwrap();
         assert!(path.exists());
         let store = load_plan(&s.root, wrong).unwrap();
@@ -628,7 +628,7 @@ export default plan({ author: "cos", goal: "Ship", why: "start", steps: [a] })
     #[test]
     fn a_version_evaluates_to_its_intent() {
         let s = Scratch::new("eval");
-        let plan = planref_of(ROOT_MODULE);
+        let plan = planid_of(ROOT_MODULE);
         write_version(&s.root, &plan, 1, ROOT_MODULE.as_bytes()).unwrap();
         let store = load_plan(&s.root, &plan).unwrap();
         let v = evaluate(&store.versions[0]).unwrap();

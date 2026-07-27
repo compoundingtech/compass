@@ -41,9 +41,9 @@ with a different message. One says "this is already committed"; the other says
 "this changes nothing." Rendering them alike would hide which happened.
 
 Committing an origin — a module with no predecessor — brings a Plan into being,
-and its identity is derived then: the PlanRef is the hash of that origin
+and its identity is derived then: the PlanId is the hash of that origin
 (decision 0017). The operator names nothing. Afterwards a Plan is addressed by
-its `goal` where a person is reading and by its PlanRef where exactness is
+its `goal` where a person is reading and by its PlanId where exactness is
 needed; a command that reports a Plan shows the `goal`, not the hash.
 
 Verification and repair are separate commands. Verification is safe to run
